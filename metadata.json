@@ -1,0 +1,6 @@
+{
+  "name": "Front-Desk-AI",
+  "description": "Multi-tenant AI receptionist platform featuring company customization, PDF RAG knowledge ingestion, phone configuration, and live call simulator.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
