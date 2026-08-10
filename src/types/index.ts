@@ -14,6 +14,25 @@ export interface BusinessPolicy {
   content: string;
 }
 
+export type VoiceProvider = 'elevenlabs';
+
+export interface VoiceSettings {
+  stability?: number;
+  similarityBoost?: number;
+  style?: number;
+  useSpeakerBoost?: boolean;
+  speed?: number;
+}
+
+export interface VoiceConfig {
+  provider: VoiceProvider;
+  voiceId: string;
+  voiceName: string;
+  modelId: string;
+  languageCode?: string;
+  settings?: VoiceSettings;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -28,6 +47,7 @@ export interface Company {
   aiPersonality: AIPersonality;
   customGreeting: string;
   voiceTone: string;
+  voiceConfig?: VoiceConfig;
   transferPhoneNumber: string;
   afterHoursMode: 'ai_receptionist' | 'voicemail' | 'forward_call';
 }

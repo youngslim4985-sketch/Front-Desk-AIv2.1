@@ -1,4 +1,19 @@
-import { Company, KnowledgeDocument, PhoneConfig, CallLog, Customer, Appointment } from '../types';
+import { Company, KnowledgeDocument, PhoneConfig, CallLog, Customer, Appointment, VoiceConfig } from '../types';
+
+export const DEFAULT_VOICE_CONFIG: VoiceConfig = {
+  provider: 'elevenlabs',
+  voiceId: '',
+  voiceName: 'Default ElevenLabs Voice',
+  modelId: 'eleven_multilingual_v2',
+  languageCode: 'en',
+  settings: {
+    stability: 0.5,
+    similarityBoost: 0.75,
+    style: 0,
+    useSpeakerBoost: true,
+    speed: 1,
+  },
+};
 
 export const INITIAL_COMPANIES: Company[] = [
   {
@@ -24,6 +39,7 @@ export const INITIAL_COMPANIES: Company[] = [
     aiPersonality: 'warm_friendly',
     customGreeting: "Thank you for calling Apex Dental Care! This is Sarah, your AI front desk assistant. How may I help care for your smile today?",
     voiceTone: 'Friendly, empathetic, and professional healthcare tone.',
+    voiceConfig: { ...DEFAULT_VOICE_CONFIG },
     transferPhoneNumber: '+1 (555) 019-2834',
     afterHoursMode: 'ai_receptionist',
   },
@@ -48,6 +64,7 @@ export const INITIAL_COMPANIES: Company[] = [
     aiPersonality: 'formal_executive',
     customGreeting: "Welcome to Vanguard Legal Group. My name is Alex, AI legal concierge. How may I direct your inquiry or arrange a legal consultation today?",
     voiceTone: 'Articulate, authoritative, calm, and polished corporate tone.',
+    voiceConfig: { ...DEFAULT_VOICE_CONFIG },
     transferPhoneNumber: '+1 (555) 482-9102',
     afterHoursMode: 'ai_receptionist',
   },
@@ -72,6 +89,7 @@ export const INITIAL_COMPANIES: Company[] = [
     aiPersonality: 'energetic_welcoming',
     customGreeting: "Hi there! Thanks for reaching out to Aura Wellness Studio! I'm Maya, your AI receptionist. Ready to book some well-deserved self-care or check our daily schedule?",
     voiceTone: 'Warm, soothing, energetic, and welcoming studio tone.',
+    voiceConfig: { ...DEFAULT_VOICE_CONFIG },
     transferPhoneNumber: '+1 (555) 739-1148',
     afterHoursMode: 'ai_receptionist',
   },

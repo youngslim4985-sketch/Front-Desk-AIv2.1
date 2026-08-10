@@ -180,4 +180,63 @@ export const api = {
     if (!res.ok) throw new Error('Failed to update appointment');
     return res.json();
   },
+
+  // ElevenLabs Voice Management
+  getVoices: async (): Promise<Voice[]> => {
+    const response = await fetch('/api/voice/voices');
+    if (!response.ok) {
+      throw new Error('Failed to load voices');
+    }
+    const data = await response.json();
+    return data.voices || [];
+  },
+
+  synthesizeVoice: async ({
+    voiceId,
+    text,
+    modelId,
+    languageCode,
+    settings,
+  }: {
+    voiceId: string;
+    text: string;
+    modelId?: string;
+    languageCode?: string;
+    settings?: {
+      stability?: number;
+      similarity_boost?: number;
+      style?: number;
+      use_speaker_boost?: boolean;
+    };
+  }): Promise<Blob> => {
+    const response = await fetch('/api/voice/synthesize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        voiceId,
+        text,
+        modelId,
+        languageCode,
+        settings,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.error || 'Failed to synthesize voice');
+    }
+
+    return response.blob();
+  },
 };
+
+export interface Voice {
+  voice_id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  labels?: Record<string, string>;
+  preview_url?: string;
+}

@@ -46,6 +46,7 @@ export const CallSimulatorModal: React.FC<CallSimulatorModalProps> = ({
   const [latestToolCall, setLatestToolCall] = useState<any>(null);
   const [ragCitations, setRagCitations] = useState<{ docTitle: string; snippet: string }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -53,14 +54,55 @@ export const CallSimulatorModal: React.FC<CallSimulatorModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Speak receptionist message using browser SpeechSynthesis
-  const speakText = (text: string) => {
-    if (!speechEnabled || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel(); // Stop prior audio
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
+  // Speak receptionist message using ElevenLabs if voiceId configured, or browser SpeechSynthesis fallback
+  const speakText = async (text: string) => {
+    if (!speechEnabled) return;
+
+    // Stop previous ElevenLabs audio or browser speech
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    // Attempt ElevenLabs voice synthesis if voiceId is configured
+    if (company.voiceConfig?.voiceId) {
+      try {
+        const blob = await api.synthesizeVoice({
+          voiceId: company.voiceConfig.voiceId,
+          text,
+          modelId: company.voiceConfig.modelId || 'eleven_multilingual_v2',
+          languageCode: company.voiceConfig.languageCode || 'en',
+          settings: {
+            stability: company.voiceConfig.settings?.stability ?? 0.5,
+            similarity_boost: company.voiceConfig.settings?.similarityBoost ?? 0.75,
+            style: company.voiceConfig.settings?.style ?? 0,
+            use_speaker_boost: company.voiceConfig.settings?.useSpeakerBoost ?? true,
+          },
+        });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudioRef.current = audio;
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          currentAudioRef.current = null;
+        };
+        await audio.play();
+        return;
+      } catch (_err) {
+        // Fallback to browser SpeechSynthesis
+      }
+    }
+
+    // Fallback to browser SpeechSynthesis
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   const handleStartCall = async () => {

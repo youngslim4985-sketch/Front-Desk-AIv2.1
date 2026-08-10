@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Company, AIPersonality, ServiceItem, BusinessPolicy } from '../types';
 import { api } from '../services/api';
+import { VoiceSelector } from './VoiceSelector';
 
 interface CompanyProfileFormProps {
   company: Company;
@@ -267,6 +268,33 @@ export const CompanyProfileForm: React.FC<CompanyProfileFormProps> = ({
             onChange={(e) => setFormData({ ...formData, voiceTone: e.target.value })}
             placeholder="e.g. Speak with calm, clinical confidence and reassure patients experiencing pain."
             className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        {/* ElevenLabs Voice Selection */}
+        <div className="border-t border-slate-100 pt-4 mt-2">
+          <VoiceSelector
+            voiceId={formData.voiceConfig?.voiceId || ''}
+            voiceName={formData.voiceConfig?.voiceName || ''}
+            modelId={formData.voiceConfig?.modelId || 'eleven_multilingual_v2'}
+            onChange={({ voiceId, voiceName, modelId }) => {
+              setFormData((prev) => ({
+                ...prev,
+                voiceConfig: {
+                  provider: 'elevenlabs',
+                  voiceId,
+                  voiceName,
+                  modelId,
+                  settings: prev.voiceConfig?.settings || {
+                    stability: 0.5,
+                    similarityBoost: 0.75,
+                    style: 0,
+                    useSpeakerBoost: true,
+                    speed: 1,
+                  },
+                },
+              }));
+            }}
           />
         </div>
       </div>

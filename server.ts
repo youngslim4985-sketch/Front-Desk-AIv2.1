@@ -9,6 +9,7 @@ import {
   INITIAL_CALL_LOGS,
   INITIAL_CUSTOMERS,
   INITIAL_APPOINTMENTS,
+  DEFAULT_VOICE_CONFIG,
 } from './src/data/mockData';
 import {
   Company,
@@ -19,6 +20,11 @@ import {
   Customer,
   Appointment,
 } from './src/types';
+import {
+  listElevenLabsVoices,
+  synthesizeElevenLabsSpeech,
+  FALLBACK_VOICES,
+} from './server/services/elevenLabs';
 
 // In-Memory Database State for Multi-Tenant Front-Desk-AI
 let companies: Company[] = [...INITIAL_COMPANIES];
@@ -144,6 +150,7 @@ async function startServer() {
       aiPersonality: aiPersonality || 'warm_friendly',
       customGreeting: customGreeting || `Thank you for calling ${name || 'our business'}! I am your AI receptionist. How may I assist you today?`,
       voiceTone: 'Professional, friendly, and helpful.',
+      voiceConfig: { ...DEFAULT_VOICE_CONFIG },
       transferPhoneNumber: '+1 (555) 000-1234',
       afterHoursMode: 'ai_receptionist',
     };
@@ -164,6 +171,62 @@ async function startServer() {
     };
 
     res.status(201).json(newCompany);
+  });
+
+  // ElevenLabs Voice Management Endpoints
+  app.get('/api/voice/voices', async (_req, res) => {
+    try {
+      const voices = await listElevenLabsVoices();
+      res.json({
+        provider: 'elevenlabs',
+        voices,
+        configured: !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim()),
+      });
+    } catch (_err) {
+      res.json({
+        provider: 'elevenlabs',
+        voices: FALLBACK_VOICES,
+        configured: false,
+      });
+    }
+  });
+
+  app.post('/api/voice/synthesize', async (req, res) => {
+    try {
+      const {
+        voiceId,
+        text,
+        modelId = 'eleven_multilingual_v2',
+        languageCode = 'en',
+        settings,
+      } = req.body;
+
+      if (!voiceId || !text) {
+        return res.status(400).json({
+          error: 'voiceId and text are required',
+        });
+      }
+
+      const audio = await synthesizeElevenLabsSpeech({
+        voiceId,
+        text,
+        modelId,
+        languageCode,
+        settings,
+      });
+
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audio.length.toString(),
+        'Cache-Control': 'no-store',
+      });
+
+      res.send(audio);
+    } catch (err: any) {
+      res.status(502).json({
+        error: err?.message || 'Failed to synthesize speech',
+      });
+    }
   });
 
   app.get('/api/settings', (req, res) => {
