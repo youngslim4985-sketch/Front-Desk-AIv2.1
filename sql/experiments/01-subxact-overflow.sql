@@ -1,0 +1,12 @@
+-- Controlled subtransaction overflow
+-- Purpose: determine whether >64 XID-bearing subtransactions
+-- produce measurable Subtrans/cache/wait effects.
+--
+-- TODO:
+-- 1. Create a dedicated test table.
+-- 2. Execute >64 XID-bearing subtransactions.
+-- 3. Keep the top-level transaction open.
+-- 4. Capture diagnostics before/during/after.
+-- 5. Commit or rollback explicitly.
+
+-- Experiment implementation intentionally pending.

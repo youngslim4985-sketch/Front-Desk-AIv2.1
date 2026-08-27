@@ -1,0 +1,17 @@
+-- Width-function isolation experiment
+-- Purpose: demonstrate that display-width processing itself
+-- does not create subtransactions.
+
+-- TODO:
+-- Compare string/width processing with and without
+-- surrounding exception/subtransaction handling.
+--
+-- The experiment must keep the two mechanisms analytically separate:
+--
+-- width processing
+--       |
+--       +--> display/alignment cost
+--
+-- exception/subtransaction pattern
+--       |
+--       +--> subtransaction/cache/replication effects

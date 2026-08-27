@@ -1,27 +1,8 @@
--- MultiXact pressure experiment
--- Purpose: generate concurrent row-lock activity.
---
--- This script is intentionally a setup point.
--- Concurrent sessions should execute the locking workload.
+-- Controlled MultiXact workload
+-- Purpose: generate concurrent compatible row locks and
+-- measure MultiXactMember/Offset cache behavior.
 
-CREATE TABLE IF NOT EXISTS experiment_lock_target (
-    id integer PRIMARY KEY,
-    value integer NOT NULL DEFAULT 0
-);
-
-INSERT INTO experiment_lock_target (id)
-VALUES (1)
-ON CONFLICT (id) DO NOTHING;
-
--- Session workload:
-BEGIN;
-
-SELECT *
-FROM experiment_lock_target
-WHERE id = 1
-FOR KEY SHARE;
-
--- Keep transaction open while other sessions perform
--- compatible row-lock operations.
-
--- COMMIT after the observation window.
+-- TODO:
+-- Use multiple sessions against a dedicated test table.
+-- Capture pg_stat_slru before and after.
+-- Record MultiXact-related wait events.

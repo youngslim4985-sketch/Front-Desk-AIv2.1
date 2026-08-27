@@ -1,0 +1,67 @@
+project: postgres-internals-research
+
+environment:
+  postgres_major_versions:
+    - 17
+    - 18
+
+sampling:
+  interval_seconds: 1
+
+experiments:
+
+  baseline:
+    file: 00-baseline.sql
+    control: true
+
+  subxact_overflow:
+    file: 01-subxact-overflow.sql
+    threshold: 64
+    target_subtransactions: 100
+
+  subxact_control:
+    file: 02-subxact-control.sql
+    control: true
+
+  multixact_pressure:
+    file: 03-multixact-pressure.sql
+
+  multixact_control:
+    file: 04-multixact-control.sql
+    control: true
+
+  replica_overflow:
+    file: 05-replica-overflow.sql
+    requires_standby: true
+
+  replica_control:
+    file: 06-replica-control.sql
+    requires_standby: true
+
+  width_vs_transaction:
+    file: 07-width-vs-transaction.sql
+    control: true
+
+metrics:
+
+  slru:
+    - blks_hit
+    - blks_read
+    - blks_written
+
+  waits:
+    - SubtransSLRU
+    - SubtransControlLock
+    - MultiXactMemberSLRU
+    - MultiXactOffsetSLRU
+    - SLRURead
+
+  replication:
+    - replay_lag
+    - replay_lsn
+    - state
+
+  performance:
+    - elapsed_time
+    - rows_processed
+    - wal_volume
