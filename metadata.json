@@ -1,6 +1,6 @@
 {
   "name": "Front-Desk-AI",
-  "description": "Multi-tenant AI receptionist platform featuring company customization, PDF RAG knowledge ingestion, phone configuration, and live call simulator.",
+  "description": "Multi-tenant AI Front Desk Receptionist with PDF RAG knowledge ingestion, ElevenLabs voice synthesis, automated appointment scheduling, and caller intelligence.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

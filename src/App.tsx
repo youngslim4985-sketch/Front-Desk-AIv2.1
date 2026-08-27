@@ -1,127 +1,393 @@
-import React, { useState, useEffect } from 'react';
-import { Header } from './components/Header';
-import { CallSimulatorModal } from './components/CallSimulatorModal';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Company, PhoneConfig, KnowledgeDocument, CallLog, Customer, Appointment } from './types';
+import { InvestigationModuleId } from './types/postgres';
+import { api } from './services/api';
+import { INITIAL_COMPANIES, INITIAL_PHONE_CONFIGS, INITIAL_DOCUMENTS, INITIAL_CALL_LOGS, INITIAL_CUSTOMERS, INITIAL_APPOINTMENTS } from './data/mockData';
+
+// Front-Desk-AI UI Components & Pages
+import { FrontDeskHeader } from './components/FrontDeskHeader';
+import { FrontDeskNavigation, FrontDeskTab } from './components/FrontDeskNavigation';
 import { DashboardPage } from './pages/DashboardPage';
-import { CallsPage } from './pages/CallsPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { PhonePage } from './pages/PhonePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { CallsPage } from './pages/CallsPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
 import { CustomersPage } from './pages/CustomersPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { ArchitecturePage } from './pages/ArchitecturePage';
-import { Company, KnowledgeDocument, PhoneConfig, CallLog, Customer, Appointment } from './types';
-import { api } from './services/api';
-import { INITIAL_COMPANIES, INITIAL_PHONE_CONFIGS } from './data/mockData';
+import { CallSimulatorModal } from './components/CallSimulatorModal';
+
+// Developer Mode (Postgres Engine Lab) Components & Modules
+import { Header as DevHeader } from './components/Header';
+import { Navigation as DevNavigation } from './components/Navigation';
+import { ArchitectureOverviewModule } from './components/modules/ArchitectureOverviewModule';
+import { SubtransactionExceptionModule } from './components/modules/SubtransactionExceptionModule';
+import { PgProcOverflowModule } from './components/modules/PgProcOverflowModule';
+import { PgSubtransSlruModule } from './components/modules/PgSubtransSlruModule';
+import { MultiXactModule } from './components/modules/MultiXactModule';
+import { Pg17SlruSizingModule } from './components/modules/Pg17SlruSizingModule';
+import { ConcurrencyContentionModule } from './components/modules/ConcurrencyContentionModule';
+import { RunningXactsModule } from './components/modules/RunningXactsModule';
+import { HotStandbyModule } from './components/modules/HotStandbyModule';
+import { PsqlTerminalModule } from './components/modules/PsqlTerminalModule';
+import { EncodingSqlstateModule } from './components/modules/EncodingSqlstateModule';
+import { BenchmarkHubModule } from './components/modules/BenchmarkHubModule';
+import { UnreleasedManifestModule } from './components/modules/UnreleasedManifestModule';
+import { SourceVerificationModule } from './components/modules/SourceVerificationModule';
+import { DiagnosticSqlModule } from './components/modules/DiagnosticSqlModule';
+import { ExperimentalHarnessModule } from './components/modules/ExperimentalHarnessModule';
+import { Bot, Sparkles, ArrowLeft, Terminal } from 'lucide-react';
 
 export default function App() {
+  // Front-Desk-AI State
   const [companies, setCompanies] = useState<Company[]>(INITIAL_COMPANIES);
-  const [activeCompany, setActiveCompany] = useState<Company>(INITIAL_COMPANIES[0]);
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-  const [phoneConfig, setPhoneConfig] = useState<PhoneConfig>(INITIAL_PHONE_CONFIGS['comp-apex-dental']);
-  const [calls, setCalls] = useState<CallLog[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>(INITIAL_COMPANIES[0].id);
+  const [phoneConfig, setPhoneConfig] = useState<PhoneConfig | null>(INITIAL_PHONE_CONFIGS['comp-apex-dental'] || null);
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>(INITIAL_DOCUMENTS);
+  const [calls, setCalls] = useState<CallLog[]>(INITIAL_CALL_LOGS);
+  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
+  const [activeTab, setActiveTab] = useState<FrontDeskTab>('dashboard');
+  const [isCallModalOpen, setIsCallModalOpen] = useState<boolean>(false);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
 
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
-  const [isCreateCompanyOpen, setIsCreateCompanyOpen] = useState(false);
-  const [newCompName, setNewCompName] = useState('');
-  const [newCompIndustry, setNewCompIndustry] = useState('');
-  const [newCompPersonality, setNewCompPersonality] = useState('warm_friendly');
-
-  // Load state when active company changes
-  const loadCompanyData = async (companyId: string) => {
-    try {
-      const [docsData, phoneData, callsData, custsData, aptsData] = await Promise.all([
-        api.getDocuments(companyId),
-        api.getPhoneConfig(companyId),
-        api.getCalls(companyId),
-        api.getCustomers(companyId),
-        api.getAppointments(companyId),
-      ]);
-
-      setDocuments(docsData);
-      setPhoneConfig(phoneData);
-      setCalls(callsData);
-      setCustomers(custsData);
-      setAppointments(aptsData);
-    } catch (err) {
-      console.error('Error loading company data:', err);
+  // Developer Mode (PostgreSQL Engine Lab) State - Hidden from regular users, accessible via ?dev=true or Ctrl+Shift+D
+  const [isDevMode, setIsDevMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.search.includes('dev=true');
     }
-  };
+    return false;
+  });
+  const [activeDevModule, setActiveDevModule] = useState<InvestigationModuleId>('overview');
+  const [selectedPgVersion, setSelectedPgVersion] = useState<number>(16);
+  const [isTerminalModalOpen, setIsTerminalModalOpen] = useState<boolean>(false);
+  const [isScriptsModalOpen, setIsScriptsModalOpen] = useState<boolean>(false);
 
+  // Keyboard shortcut listener: Ctrl+Shift+D or Cmd+Shift+D to toggle hidden developer mode
   useEffect(() => {
-    // Initial fetch of companies
-    api.getCompanies().then((compList) => {
-      if (compList && compList.length > 0) {
-        setCompanies(compList);
-        setActiveCompany(compList[0]);
-        loadCompanyData(compList[0].id);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        setIsDevMode((prev) => !prev);
       }
-    }).catch(() => {
-      loadCompanyData(activeCompany.id);
-    });
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleSelectCompany = (comp: Company) => {
-    setActiveCompany(comp);
-    setSelectedCall(null);
-    loadCompanyData(comp.id);
+  const selectedCompany = companies.find((c) => c.id === selectedCompanyId) || companies[0];
+
+  // Refresh data for selected company
+  const refreshCompanyData = useCallback(async (compId: string) => {
+    try {
+      const [fetchedDocs, fetchedPhone, fetchedCalls, fetchedCusts, fetchedApts] = await Promise.allSettled([
+        api.getDocuments(compId),
+        api.getPhoneConfig(compId),
+        api.getCalls(compId),
+        api.getCustomers(compId),
+        api.getAppointments(compId),
+      ]);
+
+      if (fetchedDocs.status === 'fulfilled' && fetchedDocs.value) {
+        setDocuments(fetchedDocs.value);
+      }
+      if (fetchedPhone.status === 'fulfilled' && fetchedPhone.value) {
+        setPhoneConfig(fetchedPhone.value);
+      }
+      if (fetchedCalls.status === 'fulfilled' && fetchedCalls.value) {
+        setCalls(fetchedCalls.value);
+      }
+      if (fetchedCusts.status === 'fulfilled' && fetchedCusts.value) {
+        setCustomers(fetchedCusts.value);
+      }
+      if (fetchedApts.status === 'fulfilled' && fetchedApts.value) {
+        setAppointments(fetchedApts.value);
+      }
+    } catch (e) {
+      console.warn('Using client-side fallback state:', e);
+    }
+  }, []);
+
+  // Initial load: Fetch companies list
+  useEffect(() => {
+    async function loadInitial() {
+      try {
+        const fetchedCompanies = await api.getCompanies();
+        if (fetchedCompanies && fetchedCompanies.length > 0) {
+          setCompanies(fetchedCompanies);
+          setSelectedCompanyId(fetchedCompanies[0].id);
+          refreshCompanyData(fetchedCompanies[0].id);
+        }
+      } catch (e) {
+        console.warn('Using initial mock company data:', e);
+        refreshCompanyData(INITIAL_COMPANIES[0].id);
+      }
+    }
+    loadInitial();
+  }, [refreshCompanyData]);
+
+  // When selected company changes
+  const handleSelectCompany = (company: Company) => {
+    setSelectedCompanyId(company.id);
+    refreshCompanyData(company.id);
   };
 
-  const handleCreateCompanySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCompName.trim()) return;
-
+  // Add a new company tenant
+  const handleAddCompany = async (data: { name: string; industry: string; aiPersonality: string }) => {
     try {
-      const created = await api.createCompany({
-        name: newCompName,
-        industry: newCompIndustry || 'Services & Retail',
-        aiPersonality: newCompPersonality,
-      });
-
-      setCompanies((prev) => [...prev, created]);
-      setActiveCompany(created);
-      setIsCreateCompanyOpen(false);
-      setNewCompName('');
-      setNewCompIndustry('');
-      loadCompanyData(created.id);
+      const newComp = await api.createCompany(data);
+      setCompanies((prev) => [...prev, newComp]);
+      setSelectedCompanyId(newComp.id);
+      refreshCompanyData(newComp.id);
     } catch (e) {
       console.error('Failed to create company:', e);
     }
   };
 
-  const refreshActiveData = () => {
-    loadCompanyData(activeCompany.id);
+  // When tab is clicked from navigation or dashboard
+  const handleNavigateTab = (tab: string) => {
+    setActiveTab(tab as FrontDeskTab);
   };
 
+  const handleToggleDevMode = (enabled: boolean) => {
+    setIsDevMode(enabled);
+  };
+
+  // DEVELOPER MODE (PostgreSQL SubXacts & Engine Lab) - Accessible only when isDevMode is explicitly active
+  if (isDevMode) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-sky-500 selection:text-white">
+        
+        {/* Top Dev Banner with Return Button */}
+        <div className="bg-sky-950/80 border-b border-sky-800/80 px-4 py-2 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <span className="bg-sky-500 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-mono">
+              Dev Mode
+            </span>
+            <span className="font-mono text-sky-200">
+              PostgreSQL Subtransactions & Engine Internals Research Workbench
+            </span>
+          </div>
+
+          <button
+            id="btn-return-frontdesk"
+            onClick={() => handleToggleDevMode(false)}
+            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-xs transition-all shadow-xs"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Return to Front-Desk-AI</span>
+          </button>
+        </div>
+
+        {/* Engine Lab Header */}
+        <DevHeader
+          activeModule={activeDevModule}
+          onSelectModule={setActiveDevModule}
+          selectedPgVersion={selectedPgVersion}
+          onSelectPgVersion={setSelectedPgVersion}
+          onOpenTerminalModal={() => setIsTerminalModalOpen(true)}
+          onOpenScriptsModal={() => setIsScriptsModalOpen(true)}
+        />
+
+        {/* Dev Mode Layout */}
+        <div className="flex-1 flex flex-col lg:flex-row max-w-7xl w-full mx-auto">
+          {/* Dev Sidebar Navigation */}
+          <DevNavigation
+            activeModuleId={activeDevModule}
+            onSelectModule={setActiveDevModule}
+          />
+
+          {/* Dynamic Main Research Canvas */}
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+            {activeDevModule === 'overview' && (
+              <ArchitectureOverviewModule
+                onSelectModule={setActiveDevModule}
+                selectedPgVersion={selectedPgVersion}
+              />
+            )}
+
+            {activeDevModule === 'unreleased_scaffold' && (
+              <UnreleasedManifestModule
+                onSelectModule={setActiveDevModule}
+                selectedPgVersion={selectedPgVersion}
+              />
+            )}
+
+            {activeDevModule === 'source_verification' && (
+              <SourceVerificationModule />
+            )}
+
+            {activeDevModule === 'diagnostic_sql' && (
+              <DiagnosticSqlModule />
+            )}
+
+            {activeDevModule === 'experimental_harness' && (
+              <ExperimentalHarnessModule />
+            )}
+
+            {(activeDevModule === 'plpgsql_exceptions' || activeDevModule === 'xid_subtransactions') && (
+              <SubtransactionExceptionModule />
+            )}
+
+            {activeDevModule === 'pgproc_overflow' && (
+              <PgProcOverflowModule />
+            )}
+
+            {activeDevModule === 'pg_subtrans_slru' && (
+              <PgSubtransSlruModule />
+            )}
+
+            {activeDevModule === 'multixact_pressure' && (
+              <MultiXactModule />
+            )}
+
+            {activeDevModule === 'pg17_slru_sizing' && (
+              <Pg17SlruSizingModule />
+            )}
+
+            {activeDevModule === 'concurrency_contention' && (
+              <ConcurrencyContentionModule
+                selectedPgVersion={selectedPgVersion}
+              />
+            )}
+
+            {activeDevModule === 'running_xacts_wal' && (
+              <RunningXactsModule />
+            )}
+
+            {activeDevModule === 'hot_standby_lag' && (
+              <HotStandbyModule />
+            )}
+
+            {activeDevModule === 'psql_width_alignment' && (
+              <PsqlTerminalModule />
+            )}
+
+            {activeDevModule === 'encoding_sqlstate_22p05' && (
+              <EncodingSqlstateModule />
+            )}
+
+            {activeDevModule === 'reproducible_scripts' && (
+              <BenchmarkHubModule />
+            )}
+          </main>
+        </div>
+
+        {/* Floating Modal for psql Terminal Shell */}
+        {isTerminalModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950">
+                <span className="font-mono text-sm font-bold text-white flex items-center gap-2">
+                  Interactive PostgreSQL psql Shell (Diagnostic Terminal)
+                </span>
+                <button
+                  onClick={() => setIsTerminalModalOpen(false)}
+                  className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs"
+                >
+                  Close (ESC)
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto flex-1 bg-slate-950">
+                <PsqlTerminalModule />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Modal for Reproducible Scripts */}
+        {isScriptsModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950">
+                <span className="font-mono text-sm font-bold text-white flex items-center gap-2">
+                  Reproducible Benchmark Scripts (pgbench / SQL / Bash)
+                </span>
+                <button
+                  onClick={() => setIsScriptsModalOpen(false)}
+                  className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs"
+                >
+                  Close (ESC)
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto flex-1 bg-slate-950">
+                <BenchmarkHubModule />
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    );
+  }
+
+  // PRIMARY FRONT-DESK-AI APPLICATION INTERFACE
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col lg:flex-row antialiased selection:bg-indigo-500 selection:text-white">
-      {/* Top Header & Left Sidebar */}
-      <Header
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-emerald-500 selection:text-white">
+      
+      {/* Front-Desk-AI Navigation Header */}
+      <FrontDeskHeader
         companies={companies}
-        activeCompany={activeCompany}
+        selectedCompany={selectedCompany}
+        phoneConfig={phoneConfig}
         onSelectCompany={handleSelectCompany}
+        onOpenCallModal={() => setIsCallModalOpen(true)}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenCallSimulator={() => setIsSimulatorOpen(true)}
-        onOpenCreateCompanyModal={() => setIsCreateCompanyOpen(true)}
+        onNavigateTab={handleNavigateTab}
+        onAddCompany={handleAddCompany}
       />
 
-      {/* Main Panel Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
+      {/* Main Front-Desk Container */}
+      <div className="flex-1 flex flex-col lg:flex-row max-w-7xl w-full mx-auto">
+        
+        {/* Left Operations Navigation Bar */}
+        <FrontDeskNavigation
+          activeTab={activeTab}
+          onSelectTab={handleNavigateTab}
+          documentCount={documents.length}
+          callCount={calls.length}
+          appointmentCount={appointments.length}
+        />
+
+        {/* Dynamic Front-Desk Operational Canvas */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           {activeTab === 'dashboard' && (
             <DashboardPage
-              company={activeCompany}
-              phoneConfig={phoneConfig}
+              company={selectedCompany}
+              phoneConfig={phoneConfig || INITIAL_PHONE_CONFIGS['comp-apex-dental']}
               calls={calls}
               appointments={appointments}
               documents={documents}
-              onNavigateTab={setActiveTab}
-              onOpenTestCall={() => setIsSimulatorOpen(true)}
-              onSelectCall={setSelectedCall}
+              onNavigateTab={handleNavigateTab}
+              onOpenTestCall={() => setIsCallModalOpen(true)}
+              onSelectCall={(call) => {
+                setSelectedCall(call);
+                setActiveTab('calls');
+              }}
+            />
+          )}
+
+          {activeTab === 'knowledge' && (
+            <KnowledgeBasePage
+              companyId={selectedCompany.id}
+              documents={documents}
+              onDocumentsUpdated={() => refreshCompanyData(selectedCompany.id)}
+            />
+          )}
+
+          {activeTab === 'phone' && (
+            <PhonePage
+              companyId={selectedCompany.id}
+              phoneConfig={phoneConfig || INITIAL_PHONE_CONFIGS['comp-apex-dental']}
+              onConfigUpdated={() => refreshCompanyData(selectedCompany.id)}
+              onOpenTestCall={() => setIsCallModalOpen(true)}
+            />
+          )}
+
+          {activeTab === 'settings' && (
+            <SettingsPage
+              company={selectedCompany}
+              onCompanyUpdated={() => refreshCompanyData(selectedCompany.id)}
             />
           )}
 
@@ -130,48 +396,21 @@ export default function App() {
               calls={calls}
               selectedCall={selectedCall}
               onSelectCall={setSelectedCall}
-              onOpenTestCall={() => setIsSimulatorOpen(true)}
-            />
-          )}
-
-          {activeTab === 'knowledge' && (
-            <KnowledgeBasePage
-              companyId={activeCompany.id}
-              documents={documents}
-              onDocumentsUpdated={refreshActiveData}
-            />
-          )}
-
-          {activeTab === 'phone' && (
-            <PhonePage
-              companyId={activeCompany.id}
-              phoneConfig={phoneConfig}
-              onConfigUpdated={refreshActiveData}
-              onOpenTestCall={() => setIsSimulatorOpen(true)}
+              onOpenTestCall={() => setIsCallModalOpen(true)}
             />
           )}
 
           {activeTab === 'appointments' && (
             <AppointmentsPage
-              companyId={activeCompany.id}
+              companyId={selectedCompany.id}
               appointments={appointments}
-              onAppointmentsUpdated={refreshActiveData}
+              onAppointmentsUpdated={() => refreshCompanyData(selectedCompany.id)}
             />
           )}
 
           {activeTab === 'customers' && (
-            <CustomersPage customers={customers} />
-          )}
-
-          {activeTab === 'settings' && (
-            <SettingsPage
-              company={activeCompany}
-              onCompanyUpdated={() => {
-                api.getSettings(activeCompany.id).then((updated) => {
-                  setActiveCompany(updated);
-                  setCompanies((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-                });
-              }}
+            <CustomersPage
+              customers={customers}
             />
           )}
 
@@ -181,81 +420,17 @@ export default function App() {
         </main>
       </div>
 
-      {/* Live Phone Call Simulator Modal */}
-      <CallSimulatorModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        company={activeCompany}
-        phoneConfig={phoneConfig}
-        onCallEnded={refreshActiveData}
-      />
-
-      {/* Register New Business Company Modal */}
-      {isCreateCompanyOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl text-slate-900">
-            <h3 className="text-lg font-bold text-slate-900">Register New Business Account</h3>
-            <p className="text-xs text-slate-500">
-              Create a new multi-tenant business profile with custom settings, phone line, and knowledge base.
-            </p>
-
-            <form onSubmit={handleCreateCompanySubmit} className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-700 font-semibold block mb-1">Company Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Skyline Auto Clinic"
-                  value={newCompName}
-                  onChange={(e) => setNewCompName(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-700 font-semibold block mb-1">Industry / Category</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Automotive & Repair"
-                  value={newCompIndustry}
-                  onChange={(e) => setNewCompIndustry(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-700 font-semibold block mb-1">Initial AI Receptionist Persona</label>
-                <select
-                  value={newCompPersonality}
-                  onChange={(e) => setNewCompPersonality(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 capitalize"
-                >
-                  <option value="warm_friendly">Warm & Friendly</option>
-                  <option value="formal_executive">Formal & Executive</option>
-                  <option value="concise_direct">Concise & Direct</option>
-                  <option value="energetic_welcoming">Energetic & Welcoming</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCompanyOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs shadow-xs"
-                >
-                  Create Company Profile
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Live AI Call Simulator Modal */}
+      {isCallModalOpen && (
+        <CallSimulatorModal
+          isOpen={isCallModalOpen}
+          onClose={() => setIsCallModalOpen(false)}
+          company={selectedCompany}
+          phoneConfig={phoneConfig || INITIAL_PHONE_CONFIGS['comp-apex-dental']}
+          onCallEnded={() => refreshCompanyData(selectedCompany.id)}
+        />
       )}
+
     </div>
   );
 }

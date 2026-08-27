@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { postgresResearchRouter } from './server/routes/postgresResearch';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -122,6 +123,14 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '20mb' }));
+
+  // API Health Check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
+
+  // PostgreSQL Subtransactions, SLRU & Internals Research Router
+  app.use('/api/postgres-research', postgresResearchRouter);
 
   // --- API ENDPOINTS ---
 
