@@ -1,103 +1,144 @@
 # Security Policy
 
-## Scope
+## Purpose
 
-This repository contains PostgreSQL performance and reliability experiments.
+This repository contains PostgreSQL research, diagnostic queries, benchmarks,
+and controlled experiments involving:
 
-The experiments are intended for controlled environments.
+- subtransactions
+- MultiXacts
+- SLRU caches
+- MVCC visibility
+- WAL and `RUNNING_XACTS`
+- hot-standby recovery
+- replication behavior
+- concurrency and performance
 
-## Authorized environments only
+Some experiments intentionally generate high transaction, lock, WAL, or SLRU
+activity.
 
-Stress workloads must only be executed against:
+These experiments can place significant load on PostgreSQL.
 
-- local PostgreSQL instances
-- disposable Docker containers
-- dedicated benchmark servers
-- infrastructure explicitly authorized for testing
+## Authorized testing only
 
-Do not execute benchmark or stress scripts against production systems without
-explicit authorization.
+All experiments must be performed only against:
 
-## Sensitive information
+- a local PostgreSQL installation
+- a disposable test database
+- dedicated research infrastructure
+- infrastructure for which explicit authorization has been obtained
+
+**Do not run stress experiments against production systems without explicit
+authorization.**
+
+## No credentials in the repository
 
 Never commit:
 
-- PostgreSQL passwords
+- database passwords
 - connection strings containing credentials
-- cloud credentials
 - API keys
-- TLS private keys
-- production database dumps
-- customer information
-- personally identifiable information
+- cloud credentials
+- SSH keys
+- certificates containing private keys
+- production configuration
+- private customer data
 
-Use environment variables or local configuration files excluded by `.gitignore`.
+Use environment variables or local configuration files that are excluded
+from Git.
 
-## Destructive operations
+Example:
 
-Some experiments may intentionally generate:
+```bash
+export PGHOST=localhost
+export PGPORT=5432
+export PGDATABASE=postgres
+export PGUSER=postgres
+```
 
-- large transaction volumes
-- many subtransactions
-- MultiXact activity
-- WAL
-- concurrent row locks
-- replication traffic
-- long-running transactions
+Do not place passwords directly into scripts.
 
-These can materially affect system performance.
+## Experiment safety
 
-Run them only on disposable or explicitly authorized infrastructure.
+Before running an experiment, verify:
+
+1. The PostgreSQL instance is authorized for testing.
+2. The database is not a production workload.
+3. Sufficient disk space is available.
+4. Sufficient memory is available.
+5. WAL growth is understood.
+6. Replication impact is understood if a standby is involved.
+7. Connection limits are appropriate.
+8. The experiment has a defined stopping condition.
+
+Experiments involving large transactions or subtransaction storms should have an explicit transaction-size limit and timeout.
 
 ## Replication experiments
 
-Standby experiments may intentionally:
+Replication experiments may generate substantial WAL and can affect standby recovery behavior.
 
-- restart PostgreSQL
-- create or remove test replicas
-- create replication slots
-- generate sustained WAL
-- delay snapshot availability
+Before testing:
 
-Do not point the experiment configuration at an existing production
-replication topology.
+- confirm the primary and standby are dedicated to the experiment
+- monitor WAL generation
+- monitor replication lag
+- monitor disk usage
+- monitor recovery state
+- stop the experiment if resource exhaustion becomes likely
 
-## Responsible reporting
+Do not intentionally exhaust storage or other shared infrastructure.
 
-If an experiment reveals a previously unknown PostgreSQL security or
-availability vulnerability, do not immediately publish exploit details.
+## Reporting a security issue
 
-First establish:
+If research performed with this repository identifies a genuine PostgreSQL security vulnerability rather than a performance or availability concern, do not immediately publish exploit details.
 
-1. A reproducible minimal case
-2. Affected PostgreSQL versions
-3. Security versus performance classification
-4. Whether the behavior is documented
-5. Whether coordinated disclosure is appropriate
+First determine whether the behavior is:
 
-## Reporting repository issues
+- already documented
+- already fixed
+- configuration-dependent
+- version-specific
+- an expected operational limitation
+- a genuine security boundary violation
 
-For ordinary repository problems, open a GitHub issue.
+For suspected PostgreSQL vulnerabilities, follow the PostgreSQL project's responsible disclosure process.
 
-Do not include credentials or sensitive infrastructure information in issues.
+## Research classification
 
-For sensitive reports, use the project's private security-reporting mechanism
-if one has been configured.
+Findings should be classified conservatively.
 
-## Research boundary
+### Source verified
+The behavior is established by PostgreSQL source inspection.
 
-A performance degradation is not automatically a security vulnerability.
+### Experimentally verified
+The behavior has been reproduced under documented conditions.
 
-The project intentionally distinguishes:
+### Performance issue
+The behavior affects latency, throughput, resource consumption, or concurrency but does not cross a security boundary.
 
-```text
-performance regression
-        |
-        +--> availability impact
-        |
-        +--> reliability impact
-        |
-        +--> security impact
-```
+### Availability issue
+The behavior can prevent or delay service availability under specific conditions.
 
-Each classification requires appropriate evidence.
+### Security vulnerability
+The behavior violates a security boundary or permits unauthorized access, modification, disclosure, or execution.
+
+Do not classify a performance characteristic as a security vulnerability without evidence supporting that classification.
+
+## Data handling
+
+Do not use confidential, personal, proprietary, or production customer data for experiments.
+
+Synthetic datasets should be used whenever possible.
+
+## Responsible research
+
+The objective of this project is to understand PostgreSQL behavior accurately and reproducibly.
+
+Claims should be supported by:
+
+- PostgreSQL source
+- official PostgreSQL documentation
+- controlled experiments
+- measured system behavior
+
+Speculation should be clearly identified as speculation.
