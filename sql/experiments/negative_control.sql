@@ -1,193 +1,170 @@
 -- ============================================================================
 -- negative_control.sql
 -- ============================================================================
+-- Experiment: Negative control for subtransaction-overflow investigation
+--
 -- Purpose:
---   Provide control workloads for the subtransaction, visibility, MultiXact,
---   and replica experiments.
+--   Reproduce approximately the same transaction/WAL workload without
+--   generating the >64 XID-bearing subtransaction condition.
 --
--- Core principle:
+-- Comparison:
 --
---   CONTROL workload
---       same approximate amount of work
---       same transaction duration where practical
---       NO subtransaction-cache overflow
+--   CONTROL:
+--       normal transaction
+--       comparable WAL activity
+--       NO subtransaction overflow
 --
---   TEST workload
---       same general workload
+--   TEST:
 --       >64 XID-bearing subtransactions
+--       overflow = true
+--       comparable WAL activity
 --
--- Only differences supported by measurement should be attributed to overflow.
+-- This experiment is intended to isolate the effect of subtransaction
+-- overflow from ordinary WAL generation and standby replay.
 --
--- Run only against authorized test infrastructure.
+-- Run only on dedicated test infrastructure.
 -- ============================================================================
 
 
 -- ============================================================================
--- 1. Experiment metadata
+-- PART A — ENVIRONMENT
 -- ============================================================================
 
 SELECT
+    clock_timestamp() AS experiment_started,
     current_database() AS database_name,
     current_user AS database_user,
     version() AS postgres_version,
-    now() AS experiment_start;
+    pg_is_in_recovery() AS in_recovery;
 
 
 -- ============================================================================
--- 2. Control table
--- ============================================================================
-
-DROP TABLE IF EXISTS negative_control_workload;
-
-CREATE TABLE negative_control_workload (
-    id bigint PRIMARY KEY,
-    payload text NOT NULL
-);
-
-
--- ============================================================================
--- 3. Populate equivalent data volume
--- ============================================================================
-
-INSERT INTO negative_control_workload (id, payload)
-SELECT
-    g,
-    md5(g::text)
-FROM generate_series(1, 10000) AS g;
-
-
--- ============================================================================
--- 4. Baseline SLRU measurements
+-- 1. Confirm this is the PRIMARY
 -- ============================================================================
 
 SELECT
+    pg_is_in_recovery() AS in_recovery;
+
+
+-- Expected:
+--
+--     false
+--
+-- ============================================================================
+
+
+-- ============================================================================
+-- 2. Initial WAL position
+-- ============================================================================
+
+SELECT
+    clock_timestamp() AS captured_at,
+    pg_current_wal_lsn() AS wal_lsn;
+
+
+-- ============================================================================
+-- 3. Initial Subtrans SLRU state
+-- ============================================================================
+
+SELECT
+    clock_timestamp() AS captured_at,
     name,
     blks_hit,
     blks_read,
     blks_written,
     stats_reset
 FROM pg_stat_slru
-WHERE name IN (
-    'Subtrans',
-    'MultiXactMember',
-    'MultiXactOffset'
-)
-ORDER BY name;
+WHERE name = 'Subtrans';
 
 
 -- ============================================================================
--- 5. CONTROL A — single transaction, no subtransactions
--- ============================================================================
---
--- This represents ordinary transactional work.
---
--- The transaction remains open briefly so its duration can be matched
--- approximately against the overflow test.
+-- 4. Create control table
 -- ============================================================================
 
-BEGIN;
-
-INSERT INTO negative_control_workload (id, payload)
-SELECT
-    100000 + g,
-    md5(g::text)
-FROM generate_series(1, 256) AS g
-ON CONFLICT (id) DO UPDATE
-SET payload = EXCLUDED.payload;
-
--- Keep transaction open for controlled observation if required.
---
--- SELECT pg_sleep(5);
-
-COMMIT;
-
-
--- ============================================================================
--- 6. CONTROL B — comparable work without EXCEPTION subtransactions
--- ============================================================================
---
--- Same broad amount of row processing, but performed set-wise.
--- ============================================================================
-
-BEGIN;
-
-INSERT INTO negative_control_workload (id, payload)
-SELECT
-    200000 + g,
-    md5(('control-' || g)::text)
-FROM generate_series(1, 256) AS g
-ON CONFLICT (id) DO UPDATE
-SET payload = EXCLUDED.payload;
-
-COMMIT;
-
-
--- ============================================================================
--- 7. CONTROL C — long-running transaction without subxact storm
--- ============================================================================
---
--- Use this control when testing concurrent visibility or standby behavior.
--- ============================================================================
-
-BEGIN;
-
-INSERT INTO negative_control_workload (id, payload)
-VALUES (
-    300000,
-    md5(clock_timestamp()::text)
+CREATE TABLE IF NOT EXISTS standby_negative_control (
+    id integer PRIMARY KEY,
+    payload text NOT NULL
 );
 
--- Keep the top-level transaction open while the concurrent workload runs.
---
--- SELECT pg_sleep(30);
 
--- COMMIT;
+-- ============================================================================
+-- PART B — CONTROL TRANSACTION
+-- ============================================================================
+--
+-- Keep the transaction open for approximately the same duration as the
+-- overflow experiment.
+--
+-- IMPORTANT:
+--
+-- No EXCEPTION blocks.
+-- No SAVEPOINT loop.
+-- No generated XID-bearing subtransactions.
+-- ============================================================================
+
+
+BEGIN;
 
 
 -- ============================================================================
--- 8. Verify control backend state
+-- 5. Generate comparable WAL
+-- ============================================================================
+
+INSERT INTO standby_negative_control (id, payload)
+SELECT
+    i,
+    'negative-control-' || i
+FROM generate_series(1, 1000) AS i
+ON CONFLICT (id)
+DO UPDATE
+SET payload = EXCLUDED.payload;
+
+
+-- ============================================================================
+-- 6. Verify backend state
 -- ============================================================================
 
 SELECT
     a.pid,
-    a.usename,
-    a.application_name,
-    a.state,
     a.xact_start,
     now() - a.xact_start AS transaction_age,
+    a.backend_xid,
+    a.backend_xmin,
     s.subxact_count,
     s.subxact_overflow,
     a.wait_event_type,
     a.wait_event
 FROM pg_stat_activity AS a
 CROSS JOIN LATERAL pg_stat_get_backend_subxact(a.pid) AS s
-WHERE a.xact_start IS NOT NULL
-ORDER BY a.xact_start;
+WHERE a.pid = pg_backend_pid();
 
 
 -- ============================================================================
--- 9. Concurrent visibility control
+-- 7. Keep transaction open
 -- ============================================================================
 --
--- Execute while CONTROL C remains open.
+-- Match the approximate duration used in the overflow experiment.
 --
--- Compare execution time against:
---
---     concurrent_visibility.sql
---
+-- Adjust this value to match the measured duration of the test run.
 -- ============================================================================
 
-EXPLAIN (ANALYZE, BUFFERS, TIMING)
-SELECT count(*)
-FROM negative_control_workload
-WHERE id BETWEEN 1 AND 10000;
+SELECT pg_sleep(30);
 
 
 -- ============================================================================
--- 10. Capture Subtrans statistics
+-- 8. Capture WAL before commit
 -- ============================================================================
 
 SELECT
+    clock_timestamp() AS captured_at,
+    pg_current_wal_lsn() AS wal_lsn;
+
+
+-- ============================================================================
+-- 9. Capture Subtrans state
+-- ============================================================================
+
+SELECT
+    clock_timestamp() AS captured_at,
     name,
     blks_hit,
     blks_read,
@@ -197,92 +174,146 @@ WHERE name = 'Subtrans';
 
 
 -- ============================================================================
--- 11. Capture MultiXact statistics
+-- 10. Commit control transaction
+-- ============================================================================
+
+COMMIT;
+
+
+-- ============================================================================
+-- PART C — POST-COMMIT
+-- ============================================================================
+
+
+SELECT
+    clock_timestamp() AS commit_time,
+    pg_current_wal_lsn() AS wal_lsn;
+
+
+-- ============================================================================
+-- 11. Final Subtrans state
 -- ============================================================================
 
 SELECT
+    clock_timestamp() AS captured_at,
     name,
     blks_hit,
     blks_read,
     blks_written
 FROM pg_stat_slru
-WHERE name IN (
-    'MultiXactMember',
-    'MultiXactOffset'
-)
-ORDER BY name;
+WHERE name = 'Subtrans';
 
 
 -- ============================================================================
--- 12. Capture relevant waits
+-- PART D — STANDBY COMPARISON
+-- ============================================================================
+--
+-- Execute the following from the STANDBY during the corresponding recovery
+-- test.
+-- ============================================================================
+
+
+SELECT
+    clock_timestamp() AS captured_at,
+    pg_is_in_recovery() AS in_recovery,
+    pg_last_wal_receive_lsn() AS receive_lsn,
+    pg_last_wal_replay_lsn() AS replay_lsn,
+    pg_last_xact_replay_timestamp() AS replay_timestamp;
+
+
+-- ============================================================================
+-- 12. Test read availability
 -- ============================================================================
 
 SELECT
-    wait_event_type,
-    wait_event,
-    count(*) AS sessions
-FROM pg_stat_activity
-WHERE wait_event_type IS NOT NULL
-GROUP BY wait_event_type, wait_event
-ORDER BY sessions DESC;
+    clock_timestamp() AS query_time,
+    current_database() AS database_name,
+    pg_is_in_recovery() AS in_recovery,
+    current_setting('transaction_read_only') AS transaction_read_only;
 
 
 -- ============================================================================
--- 13. Control requirements
+-- ============================================================================
+-- COMPARISON MATRIX
 -- ============================================================================
 --
--- The control should match the test as closely as possible in:
+-- Record one row for the CONTROL and one for the OVERFLOW experiment.
 --
---     rows processed
---     transaction duration
---     WAL generated
---     number of concurrent sessions
---     query shape
---     database state
---
--- while avoiding:
---
---     >64 XID-bearing subtransactions
---
--- ============================================================================
--- 14. Required comparison matrix
--- ============================================================================
---
---                  CONTROL       OVERFLOW TEST
--- ------------------------------------------------
--- rows processed       X               X
--- transaction time     X               X
--- WAL volume           X               X
--- concurrency          X               X
--- Subtrans reads       ?               ?
--- SLRU waits           ?               ?
--- query latency        ?               ?
--- standby readiness    ?               ?
---
--- The values marked "?" must come from measurements.
+-- | Metric                         | Control | Overflow |
+-- |--------------------------------|---------|----------|
+-- | PostgreSQL version             |         |          |
+-- | transaction duration           |         |          |
+-- | subxact_count                  |         |          |
+-- | subxact_overflow               |         |          |
+-- | Subtrans blks_read delta       |         |          |
+-- | Subtrans blks_hit delta        |         |          |
+-- | WAL generated                  |         |          |
+-- | standby receive lag            |         |          |
+-- | standby replay lag             |         |          |
+-- | standby readiness time         |         |          |
+-- | first successful read          |         |          |
+-- | SLRURead waits                 |         |          |
+-- | MultiXact waits                |         |          |
 --
 -- ============================================================================
--- 15. Interpretation
+
+
+-- ============================================================================
+-- INTERPRETATION
 -- ============================================================================
 --
--- If TEST >> CONTROL for Subtrans reads/waits and latency:
+-- The control should demonstrate:
 --
---     evidence supports an overflow-specific performance effect.
+--     subxact_overflow = false
 --
--- If TEST ~= CONTROL:
+-- while producing a comparable amount of ordinary database/WAL activity.
 --
---     overflow-specific impact was not demonstrated under this workload.
+-- If standby recovery time is similar between CONTROL and OVERFLOW:
 --
--- If both are slow but TEST has substantially more WAL:
+--     the overflow condition has not demonstrated a measurable standby
+--     availability effect under this workload.
 --
---     further normalization is required before assigning causality.
+-- If OVERFLOW consistently shows materially longer readiness/recovery:
+--
+--     investigate the WAL transaction-state records and snapshot construction
+--     path before attributing the difference specifically to pg_subtrans.
 --
 -- ============================================================================
--- 16. Important limitation
+
+
+-- ============================================================================
+-- REPEATABILITY REQUIREMENT
 -- ============================================================================
 --
--- A negative control does not prove that no effect exists.
+-- Run both workloads multiple times.
 --
--- It only establishes whether the effect is distinguishable from the chosen
--- baseline under the tested workload and measurement conditions.
+-- Recommended minimum:
+--
+--     5 CONTROL runs
+--     5 OVERFLOW runs
+--
+-- Report:
+--
+--     median
+--     p95
+--     minimum
+--     maximum
+--
+-- rather than relying on a single observation.
+--
+-- ============================================================================
+
+
+-- ============================================================================
+-- FINAL RULE
+-- ============================================================================
+--
+-- This experiment must NOT be used to claim:
+--
+--     "PGPROC_MAX_CACHED_SUBXIDS causes replica outages."
+--
+-- It can only establish whether the overflow condition produces a measurable
+-- difference under the tested PostgreSQL version, configuration, replication
+-- topology, and workload.
+--
 -- ============================================================================
