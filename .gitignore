@@ -43,7 +43,7 @@ results/tmp/
 
 # Generated reports
 results/generated/
-*.html
+results/generated/*.html
 *.pdf
 
 # Temporary files
