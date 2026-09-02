@@ -1,413 +1,743 @@
-# PostgreSQL Transaction, SLRU, MultiXact & Hot-Standby Research
+Front Desk AI
 
-A controlled research and benchmarking repository for investigating PostgreSQL
-subtransaction overflow, SLRU behavior, MultiXact pressure, MVCC visibility,
-and hot-standby snapshot availability.
+AI-Powered Front Desk Automation for Modern Businesses
 
-The repository separates:
+Front Desk AI is a multi-tenant AI receptionist and business-assistance platform designed to help organizations automate front-desk workflows such as customer inquiries, appointment scheduling, phone interactions, document/knowledge retrieval, and routine administrative tasks.
 
-1. Source-level PostgreSQL behavior
-2. Diagnostic instrumentation
-3. Controlled experiments
-4. Benchmark results
-5. Causal interpretation
-6. Application-level implications
-
-The primary research question is:
-
-> Under what realistic workloads can excessive subtransactions, MultiXact
-> activity, and SLRU pressure produce measurable performance degradation or
-> delay read availability on PostgreSQL standbys?
+The long-term vision is to evolve Front Desk AI from a business automation platform into a secure, enterprise-ready system capable of supporting increasingly complex organizations and, eventually, regulated industries such as healthcare.
 
 ---
 
-## Research boundary
+🚀 Project Vision
 
-This project investigates several mechanisms that must not be conflated.
+Front Desk AI is being built around a simple business problem:
 
-### Mechanism A — Width and formatting
+«Businesses spend significant time answering repetitive questions, managing appointments, handling phone interactions, and retrieving information that already exists in their internal documents.»
 
-PostgreSQL/psql display-width processing includes:
+Front Desk AI aims to provide an intelligent front desk that can:
 
-- `ucs_wcwidth`
-- `pg_wcswidth`
-- `pg_wcssize`
-- `pg_wcsformat`
-- multibyte character handling
-- control-character expansion
-- multiline cell formatting
-- Unicode display-width calculation
+- Answer customer questions
+- Retrieve information from company knowledge
+- Assist with appointment scheduling
+- Handle phone-related workflows
+- Process business documents
+- Provide AI-assisted customer interactions
+- Support multiple organizations from a shared platform
+- Eventually communicate across multiple languages
 
-These mechanisms concern textual representation and table alignment.
+The goal is not simply to create an AI chatbot.
 
-They do **not** inherently create PostgreSQL subtransactions.
-
-### Mechanism B — Subtransactions
-
-PL/pgSQL exception handling can create subtransactions.
-
-A workload such as:
-
-```text
-FOR each row
-    BEGIN
-        process row
-    EXCEPTION
-        WHEN others THEN
-            record error
-    END
-```
-
-can generate many subtransactions inside one top-level transaction.
-
-PostgreSQL maintains a limited per-backend cache of subtransaction IDs.
-
-The commonly relevant implementation threshold is:
-
-```text
-PGPROC_MAX_CACHED_SUBXIDS = 64
-```
-
-Exceeding that threshold is a cache overflow condition, not a transaction failure.
-
-### Mechanism C — pg_subtrans / SLRU
-
-When subtransaction information cannot be represented entirely in the backend's cached subtransaction-ID array, PostgreSQL may need to resolve subtransaction ancestry through pg_subtrans.
-
-This introduces additional SLRU activity.
-
-The project measures:
-
-- SLRU reads
-- SLRU hits
-- SLRU writes
-- SLRU wait events
-- query latency
-- transaction duration
-- concurrency effects
-
-### Mechanism D — MultiXact
-
-MultiXacts represent multiple transaction members associated with a tuple, particularly compatible row-lock combinations.
-
-The relevant SLRU structures include:
-
-- pg_multixact/offsets
-- pg_multixact/members
-
-PostgreSQL 17+ exposes configurable cache sizes for these structures.
-
-The project measures:
-
-- MultiXactMember
-- MultiXactOffset
-- blks_hit
-- blks_read
-- MultiXact-related wait events
-- concurrent locking behavior
-
-### Mechanism E — Hot standby
-
-Subtransaction overflow can affect snapshot information used during recovery.
-
-A newly recovering standby may need additional transaction-state information before it can safely accept read-only queries.
-
-The project therefore distinguishes:
-
-```text
-WAL replay progress
-        !=
-hot-standby query availability
-```
-
-The research does not assume that replication lag automatically means hot-standby unavailability.
+The goal is to build a secure, scalable business automation platform.
 
 ---
 
-## Research questions
+🏗️ Current Architecture
 
-### RQ1 — Subtransaction overhead
+The application is being developed around a modern cloud application stack:
 
-What is the performance cost of repeatedly creating subtransactions inside one top-level transaction?
+                    Front Desk AI
+                         │
+                         ▼
+                 Next.js Frontend
+                         │
+                         ▼
+                    API Layer
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+        Authentication        Tenant Identity
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+                PostgreSQL / Supabase
+                         │
+                  PostgreSQL RLS
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+        Company A Data        Company B Data
+              │                     │
+              └─────── ISOLATED ───┘
 
-### RQ2 — Cache overflow
-
-What changes once the backend exceeds its cached subtransaction-ID capacity?
-
-### RQ3 — SLRU behavior
-
-Does subtransaction overflow measurably increase pg_subtrans SLRU activity?
-
-### RQ4 — Concurrent impact
-
-Can one backend's subtransaction-heavy transaction measurably affect unrelated concurrent sessions?
-
-### RQ5 — MultiXact behavior
-
-How do concurrent row locks affect MultiXact SLRU cache utilization and wait events?
-
-### RQ6 — PostgreSQL 17+ cache tuning
-
-Can increasing:
-
-- subtransaction_buffers
-- multixact_member_buffers
-- multixact_offset_buffers
-
-reduce measured SLRU pressure?
-
-### RQ7 — Standby availability
-
-Under what conditions can subtransaction overflow delay hot-standby query availability?
-
-### RQ8 — Combined workload
-
-Does a realistic workload combining text processing, exception handling, row locking, and replication produce a measurable interaction between these mechanisms?
+The architecture is intentionally being built so that security and tenant isolation are enforced at the database layer rather than relying solely on frontend behavior.
 
 ---
 
-## Core causal model
+🔐 Security Architecture
 
-The primary causal chain under investigation is:
+Security is a core part of the architecture rather than a feature being added at the end.
 
-```text
-Repeated error handling
-        |
-        v
-Many XID-bearing subtransactions
-        |
-        v
-Subtransaction cache overflow
-        |
-        +--------------------+
-        |                    |
-        v                    v
-pg_subtrans lookups       Overflowed
-        |                 transaction state
-        v                    |
-SLRU activity               v
-        |              Snapshot/recovery
-        v                consequences
-Concurrent visibility
-work / contention
-```
+The database foundation currently includes:
 
-A separate MultiXact chain is:
+- PostgreSQL
+- Row Level Security (RLS)
+- Forced RLS on application tables
+- Tenant-scoped policies
+- Composite foreign keys
+- Restricted application database role
+- Security-hardened tenant context function
+- Explicit database privileges
+- Separation between application credentials and source code
 
-```text
-Concurrent compatible row locks
-        |
-        v
-MultiXact creation
-        |
-        +-----------------------+
-        |                       |
-        v                       v
-Offset metadata          Member metadata
-        |                       |
-        v                       v
-MultiXactOffset          MultiXactMember
-SLRU cache               SLRU cache
-        |                       |
-        +-----------+-----------+
-                    |
-                    v
-             Cache pressure /
-             synchronization
-                    |
-                    v
-              Query latency
-```
+Tenant Isolation
 
-The project must not combine these chains without empirical evidence.
+Front Desk AI is designed as a multi-tenant system.
 
----
+Conceptually:
 
-## Experimental philosophy
+Request
+   │
+   ▼
+Tenant Identity
+   │
+   ▼
+Company Context
+   │
+   ▼
+Database Transaction
+   │
+   ▼
+PostgreSQL RLS
+   │
+   ▼
+Only Authorized Company Data
 
-Every performance claim should be supported by a comparison.
+This architecture is intended to prevent one organization's data from being accessible to another organization.
 
-At minimum, experiments should include:
+Database Role Security
 
-1. Baseline
-2. Treatment
-3. Negative control
-4. Representative concurrency
-5. Repeat measurements
-6. Recorded PostgreSQL version
-7. Recorded configuration
-8. Recorded hardware/runtime environment
+A dedicated "frontdeskai_app" PostgreSQL role has been created with restricted privileges.
 
-Avoid drawing conclusions from a single benchmark run.
+The role was specifically checked to ensure it does not have elevated attributes such as:
+
+- SUPERUSER
+- BYPASSRLS
+- CREATE DATABASE
+- CREATE ROLE
+
+This follows the principle of least privilege.
 
 ---
 
-## Primary measurements
+🗄️ Database Foundation
 
-Experiments should capture as many of the following as practical:
+The initial database was confirmed to be empty before implementation.
 
-### Transaction metrics
+The current schema contains six core tables:
 
-- transaction duration
-- transaction count
-- subtransaction count
-- subtransaction overflow state
-- commit/rollback behavior
+companies
+customers
+phone_configs
+calls
+appointments
+documents
 
-### SLRU metrics
+Data Protection
 
-- blks_hit
-- blks_read
-- blks_written
-- statistics reset time
+The schema uses composite relationships involving both the resource identifier and "company_id" where appropriate.
 
-### Wait metrics
+This provides an additional database-level defense against accidental cross-tenant relationships.
 
-- SubtransSLRU
-- SubtransControlLock
-- MultiXactMemberSLRU
-- MultiXactOffsetSLRU
-- MultiXactMemberBuffer
-- MultiXactOffsetBuffer
-- IO:SLRURead
+For example:
 
-Exact wait-event names may differ across PostgreSQL versions and should be verified against the server being tested.
+customer_id + company_id
 
-### Replication metrics
+rather than relying solely on:
 
-- WAL position
-- replay position
-- replay lag
-- recovery state
-- hot-standby readiness
-- connection availability
-- snapshot state
+customer_id
 
-### Query metrics
-
-- execution time
-- latency distribution
-- throughput
-- rows processed
-- errors/rejections
+The objective is to make tenant ownership part of the database relationship itself.
 
 ---
 
-## Safety boundary
+🛡️ Row Level Security
 
-All stress experiments must run only against:
+RLS has been:
 
-- local PostgreSQL instances
-- disposable containers
-- dedicated test databases
-- explicitly authorized infrastructure
+- Enabled on all six core tables
+- Forced on all six tables
+- Configured with tenant isolation policies
+- Applied across SELECT / INSERT / UPDATE / DELETE operations
 
-Never run the stress harness against a production database unless the environment has been explicitly approved for load testing.
+A security helper function has also been implemented:
 
-See SECURITY.md.
+frontdeskai.frontdeskai_current_company_id()
 
----
-
-## Repository structure
-
-```text
-.
-├── README.md
-├── LICENSE
-├── CONTRIBUTING.md
-├── SECURITY.md
-├── CHANGELOG.md
-├── Makefile
-├── docker-compose.yml
-├── .gitignore
-│
-├── docs/
-│   ├── ...
-│
-├── sql/
-│   ├── diagnostics/
-│   ├── experiments/
-│   └── schema/
-│
-├── scripts/
-├── config/
-├── tests/
-├── references/
-├── benchmarks/
-└── results/
-```
-
-The documentation directory contains the source verification, causal model, hypothesis matrix, experiment definitions, and final research report.
-
-The SQL directory contains diagnostic queries, experiment workloads, and result schemas.
-
-Scripts provide orchestration and repeatable benchmark execution.
+The function was hardened according to the project's security design, including an explicit search path and security-invoker behavior.
 
 ---
 
-## Status
+📊 Current Development Status
 
-Current project status:
+Completed
 
-```text
-Source/model research:        ~95–97%
-Experimental validation:      Pending
-Controlled reproduction:      Pending
-Replication reproduction:     Pending
-Final conclusions:            Pending
-```
+Infrastructure
 
-The high theoretical confidence does not imply that the performance or availability hypotheses have been empirically demonstrated.
+- [x] Frontend deployed to Vercel
+- [x] Correct Supabase project identified
+- [x] Vercel/Supabase integration confirmed
+- [x] PostgreSQL database established
 
-The remaining work is primarily measurement.
+Database
 
----
+- [x] Six core tables created
+- [x] Composite foreign-key protections implemented
+- [x] Tenant context function implemented
+- [x] RLS enabled
+- [x] RLS forced
+- [x] Tenant isolation policies implemented
+- [x] Database structure verified directly against the live database
 
-## Non-goals
+Security
 
-This project does not attempt to:
+- [x] Restricted "frontdeskai_app" database role created
+- [x] Application privileges explicitly defined
+- [x] Elevated PostgreSQL attributes removed/rejected
+- [x] Security architecture documented
+- [x] RLS testing framework prepared
 
-- modify PostgreSQL internals
-- establish universal performance numbers
-- claim that every EXCEPTION block causes serious degradation
-- claim that every subtransaction overflow causes replica outage
-- treat SLRU cache misses as automatically pathological
-- treat replication lag as equivalent to standby unavailability
-- combine unrelated PostgreSQL mechanisms without evidence
+Engineering Diagnosis
 
----
+An important discovery during development was that the original deployed interface was primarily operating with mock/fallback data.
 
-## Reproducibility
+The frontend was making calls to API endpoints that returned platform-level "404" responses because the corresponding backend routes had not yet been implemented.
 
-Record the following for every experiment:
+This was confirmed through live browser Console and Network inspection.
 
-- PostgreSQL version
-- Operating system
-- CPU
-- RAM
-- Storage type
-- shared_buffers
-- work_mem
-- maintenance_work_mem
-- max_connections
-- subtransaction_buffers
-- multixact_member_buffers
-- multixact_offset_buffers
-- synchronous_commit
-- fsync
-- wal_level
-- max_wal_senders
-- hot_standby
-- experiment duration
-- concurrency
-- dataset size
-
-Where possible, store raw measurements in the repository's results structure rather than reporting only derived averages.
+Rather than masking the problem, development was redirected toward implementing the real backend architecture.
 
 ---
 
-## License
+🚧 Current Development Phase
 
-This project is released under the MIT License.
+Phase 1 — Database Foundation
 
-See LICENSE.
+Status: COMPLETE ✅
+
+The database and security foundation has been implemented and verified against the live Supabase database.
+
+---
+
+Phase 2 — API Layer
+
+Status: IN PROGRESS 🟡
+
+The first real backend endpoint is being implemented:
+
+/api/companies
+
+The objective is to establish the pattern that the remaining API routes will follow.
+
+Planned API surface:
+
+/api/companies
+/api/knowledge/documents
+/api/phone
+/api/calls
+/api/customers
+/api/appointments
+
+The API layer will connect the frontend to the real PostgreSQL-backed application instead of the current mock/fallback behavior.
+
+---
+
+🔑 Tenant Identity
+
+One of the major remaining architecture components is tenant identity resolution.
+
+The database already contains the foundation for company API-key identification through:
+
+companies.api_key_hash
+
+The remaining work is to implement the application middleware that securely resolves:
+
+API Key
+   ↓
+Company Identity
+   ↓
+Tenant Context
+   ↓
+RLS
+   ↓
+Authorized Data
+
+The objective is to ensure that clients cannot simply submit another organization's "company_id" and access its data.
+
+---
+
+🤖 AI & RAG Roadmap
+
+Front Desk AI is being designed to support a retrieval-augmented generation workflow.
+
+Future architecture:
+
+Business Documents
+        │
+        ▼
+Document Processing
+        │
+        ▼
+Chunking
+        │
+        ▼
+Embeddings
+        │
+        ▼
+Vector Storage
+        │
+        ▼
+Semantic Retrieval
+        │
+        ▼
+AI Model
+        │
+        ▼
+Grounded Business Response
+
+The system will eventually use company-specific knowledge to generate responses based on the organization's approved information rather than relying exclusively on general-purpose AI knowledge.
+
+Planned capabilities include:
+
+- Document upload
+- Document extraction
+- Chunking
+- Embeddings
+- Vector search
+- Retrieval
+- Context-aware AI responses
+- Knowledge-base management
+- Document deduplication
+- Improved retrieval quality
+
+---
+
+🌎 Multilingual Expansion
+
+A major future capability is multilingual front-desk automation.
+
+The architecture is intended to separate language processing from the underlying business logic.
+
+Conceptually:
+
+Customer
+   ↓
+Language Detection
+   ↓
+Speech → Text
+   ↓
+Intent / RAG
+   ↓
+Business Logic
+   ↓
+AI Response
+   ↓
+Text → Speech
+   ↓
+Customer
+
+Potential future capabilities include:
+
+- English
+- Spanish
+- French
+- Additional languages based on customer demand
+- Multilingual document retrieval
+- Multilingual voice interaction
+- Language-aware appointment workflows
+
+Languages will be added progressively based on actual customer requirements rather than attempting to launch every language simultaneously.
+
+---
+
+☎️ Voice & Phone Automation
+
+Future development will expand Front Desk AI into a more complete voice-based front desk.
+
+Potential capabilities include:
+
+- Incoming calls
+- Speech recognition
+- AI conversation
+- Voice selection
+- Text-to-speech
+- Appointment scheduling
+- Call records
+- Call summaries
+- Business knowledge retrieval during calls
+- Human escalation
+
+The architecture is intended to keep voice interaction separate from the core business logic so the platform can support different communication channels.
+
+---
+
+🏥 Long-Term Enterprise & Healthcare Vision
+
+The long-term goal is to make Front Desk AI capable of supporting increasingly sophisticated organizations.
+
+Healthcare is a potential future vertical, but this requires substantially more work than the current MVP.
+
+A healthcare deployment would require careful consideration of:
+
+- PHI protection
+- HIPAA requirements
+- Business Associate Agreements
+- Strong identity and access management
+- Role-based access control
+- Audit logging
+- Encryption
+- Vendor security
+- Incident response
+- Data retention
+- Disaster recovery
+- High availability
+- Healthcare interoperability
+- Potential HL7/FHIR integrations
+- Independent security testing
+
+Front Desk AI is not currently represented as hospital-ready or HIPAA-compliant.
+
+Healthcare readiness is a long-term engineering and business objective, not a claim about the current system.
+
+---
+
+🧪 Testing & Verification Roadmap
+
+A dedicated RLS verification script has been developed to test the security model against a production-like database.
+
+The remaining verification includes:
+
+- [ ] Execute "test_rls.sql" against the live database
+- [ ] Verify cross-tenant SELECT isolation
+- [ ] Verify cross-tenant INSERT protection
+- [ ] Verify cross-tenant UPDATE protection
+- [ ] Verify cross-tenant DELETE protection
+- [ ] Verify restricted database-role behavior
+- [ ] Verify RLS cannot be bypassed by the application role
+- [ ] Test API authorization
+- [ ] Test malformed input
+- [ ] Test authentication failures
+- [ ] Test authorization failures
+- [ ] Test failure/recovery scenarios
+
+Security testing will be treated as an engineering requirement rather than an optional final step.
+
+---
+
+🔒 Production Hardening Roadmap
+
+Before production deployment, additional work remains.
+
+Secrets
+
+- [ ] Complete environment-variable verification
+- [ ] Remove any placeholder credentials
+- [ ] Rotate credentials that may have been exposed during development
+- [ ] Verify secrets are not committed to Git
+- [ ] Establish production secret management
+
+Application Security
+
+- [ ] Authentication
+- [ ] Authorization
+- [ ] API-key security
+- [ ] Input validation
+- [ ] Rate limiting
+- [ ] Secure error handling
+- [ ] Audit logging
+
+Reliability
+
+- [ ] Database backups
+- [ ] Recovery procedures
+- [ ] Health checks
+- [ ] Monitoring
+- [ ] Error tracking
+- [ ] Performance testing
+- [ ] Load testing
+- [ ] Failure testing
+
+DevOps
+
+- [ ] Production environment separation
+- [ ] CI/CD validation
+- [ ] Automated testing
+- [ ] Deployment checks
+- [ ] Rollback procedures
+- [ ] Infrastructure documentation
+
+---
+
+📈 Scaling Strategy
+
+Front Desk AI is being developed with the expectation that the platform will eventually support many organizations and users.
+
+Scaling will be approached progressively.
+
+Prototype
+   ↓
+Controlled Users
+   ↓
+Small Business Customers
+   ↓
+Growing SaaS Platform
+   ↓
+Enterprise Customers
+   ↓
+Highly Regulated Industries
+
+The architecture will be evaluated and upgraded based on real workload requirements rather than prematurely introducing unnecessary infrastructure.
+
+Potential future improvements include:
+
+- Connection pooling
+- Caching
+- Background jobs
+- Queues
+- Horizontal API scaling
+- Database optimization
+- Observability
+- Load balancing
+- High availability
+- Disaster recovery
+
+---
+
+🧠 Engineering Principles
+
+Front Desk AI is being developed around several core engineering principles:
+
+Security by Design
+
+Security controls are incorporated into the architecture rather than being added after the application is finished.
+
+Least Privilege
+
+Application components should receive only the permissions they require.
+
+Defense in Depth
+
+Security should not depend on a single layer.
+
+Authentication
+      +
+Authorization
+      +
+API Controls
+      +
+Database RLS
+      +
+Restricted DB Role
+      +
+Testing
+
+Tenant Isolation
+
+Organizations must remain logically separated from one another.
+
+Build → Test → Verify
+
+Features are not considered complete simply because they compile or deploy.
+
+The objective is to verify behavior against the actual environment.
+
+Progressive Scaling
+
+Infrastructure complexity should increase as customer requirements and system load increase.
+
+---
+
+💼 Business Value
+
+Front Desk AI is designed to help businesses reduce repetitive administrative work while improving responsiveness.
+
+Potential business outcomes include:
+
+- Reduced front-desk workload
+- Faster customer responses
+- Automated appointment workflows
+- 24/7 availability
+- Faster access to internal information
+- Consistent customer interactions
+- Multilingual customer support
+- Reduced manual data entry
+- Improved operational efficiency
+
+The platform is intended to complement employees rather than simply replace them, with human escalation remaining an important part of the long-term design.
+
+---
+
+👨‍💻 Engineering Skills Demonstrated
+
+This project demonstrates practical experience across:
+
+- Full-stack application development
+- Next.js
+- API development
+- PostgreSQL
+- Supabase
+- Database architecture
+- Row Level Security
+- Multi-tenant architecture
+- Least-privilege security
+- Authentication/authorization design
+- RAG architecture
+- AI API integration
+- Document processing
+- Vector search concepts
+- Cloud deployment
+- Vercel
+- Git/GitHub
+- Environment/secrets management
+- Security testing
+- Production architecture
+- System design
+
+The project is intentionally being developed as both a business product and a practical demonstration of modern software engineering and security principles.
+
+---
+
+📍 Project Maturity
+
+Current status: Active Development
+
+Current estimated production-readiness
+
+~60%
+
+This represents the estimated progress toward a secure, fully functional production SaaS—not the percentage of source code completed.
+
+The remaining work is concentrated heavily in:
+
+- Backend APIs
+- Tenant identity
+- Authentication/authorization
+- Real AI/RAG integration
+- Frontend/backend integration
+- Security verification
+- Production hardening
+- Monitoring and reliability
+- Credential rotation
+
+---
+
+🗺️ Roadmap
+
+Phase 1 — Foundation ✅
+
+- Database architecture
+- PostgreSQL schema
+- Tenant isolation
+- RLS
+- Restricted application role
+- Security foundation
+
+Phase 2 — Backend 🟡
+
+- Companies API
+- Customers API
+- Documents API
+- Phone API
+- Calls API
+- Appointments API
+- Tenant middleware
+
+Phase 3 — AI/RAG
+
+- Document ingestion
+- Embeddings
+- Vector retrieval
+- Grounded AI responses
+- Knowledge management
+
+Phase 4 — Production
+
+- Authentication
+- Authorization
+- Testing
+- Monitoring
+- Rate limiting
+- Backups
+- CI/CD
+- Security hardening
+- Credential rotation
+
+Phase 5 — Growth
+
+- Real customers
+- Usage analytics
+- Billing
+- Multilingual support
+- Voice expansion
+- Performance optimization
+- Scaling
+
+Phase 6 — Enterprise
+
+- Advanced RBAC
+- Enterprise identity
+- High availability
+- Disaster recovery
+- Advanced audit controls
+- Security assessments
+- Enterprise integrations
+
+Phase 7 — Healthcare Opportunity
+
+- Healthcare-specific security requirements
+- PHI controls
+- HIPAA-oriented architecture
+- BAA/vendor assessments
+- Healthcare interoperability
+- FHIR/HL7 integrations where appropriate
+- Healthcare pilot programs
+
+---
+
+🎯 Current Priority
+
+The immediate objective is deliberately narrow:
+
+«Replace the first 404 API endpoint with a real, tenant-aware, RLS-backed backend endpoint.»
+
+The first target is:
+
+/api/companies
+
+Once this endpoint successfully demonstrates the complete path from application request → tenant identity → PostgreSQL → RLS → authorized response, the same architectural pattern can be extended to the remaining APIs.
+
+---
+
+📌 Project Philosophy
+
+Front Desk AI is not being treated as a finished demo.
+
+It is being developed as a progressively hardened production system.
+
+The project began with a polished frontend prototype. During validation, the backend limitations were identified through live testing. Instead of hiding those limitations, development shifted toward rebuilding the underlying architecture.
+
+That process is intentional.
+
+The objective is to demonstrate the ability to:
+
+Diagnose → Architect → Build → Secure → Test → Deploy → Scale
+
+rather than simply produce a visually impressive application.
+
+---
+
+Long-Term Vision
+
+Front Desk AI aims to become a secure, multilingual AI front-desk platform capable of supporting organizations from small businesses to larger enterprises and, eventually, highly regulated environments.
+
+The immediate priority is not to build everything at once.
+
+It is to build the foundation correctly, validate it with real users, learn from production usage, and progressively increase the system's security, reliability, intelligence, and scale.
+
+---
+
+Project: Front Desk AI
+Organization: T&F Automate / T&F Investments and Holdings LLC
+Status: Active Development
+Architecture: Next.js + PostgreSQL + Supabase + RLS + AI/RAG
+Production Readiness: ~60%
+Focus: AI automation, secure multi-tenant architecture, RAG, voice workflows, and scalable business automation
