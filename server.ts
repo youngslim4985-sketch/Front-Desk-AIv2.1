@@ -3,6 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import { postgresResearchRouter } from './server/routes/postgresResearch';
+import companiesRouter from './server/companies.route';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -123,6 +124,7 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '20mb' }));
+  app.use(companiesRouter);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
