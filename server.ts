@@ -628,9 +628,17 @@ Your Responsibilities:
   return app;
 }
 
-const appPromise = startServer();
+const appPromise = startServer().catch((err) => {
+  console.error('STARTUP_ERROR:', err);
+  throw err;
+});
 
 export default async function handler(req: any, res: any) {
-  const app = await appPromise;
-  return app(req, res);
+  try {
+    const app = await appPromise;
+    return app(req, res);
+  } catch (err) {
+    console.error('HANDLER_ERROR:', err);
+    return res.status(500).json({ error: 'Server startup failed' });
+  }
 }
