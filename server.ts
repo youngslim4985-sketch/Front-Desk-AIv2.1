@@ -625,9 +625,12 @@ Your Responsibilities:
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Front-Desk-AI Server running on http://0.0.0.0:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+const appPromise = startServer();
+
+export default async function handler(req: any, res: any) {
+  const app = await appPromise;
+  return app(req, res);
+}
