@@ -1,4 +1,5 @@
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -121,9 +122,20 @@ function searchKnowledgeChunks(companyId: string, query: string, topK = 4) {
 
 async function startServer() {
   const app = express();
+app.set('trust proxy', 1);
   const PORT = 3000;
 
   app.use(express.json({ limit: '20mb' }));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
+app.use('/api', apiLimiter);
   app.use(companiesRouter);
 
   // API Health Check
