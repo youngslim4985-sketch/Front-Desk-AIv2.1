@@ -5,6 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import { postgresResearchRouter } from './server/routes/postgresResearch';
 import companiesRouter from './server/companies.route';
+import customersRouter from './server/customers.route';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -137,6 +138,7 @@ const apiLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
   app.use(companiesRouter);
+    app.use(customersRouter);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -589,11 +591,6 @@ Your Responsibilities:
     res.status(201).json(newCall);
   });
 
-  app.get('/api/customers', (req, res) => {
-    const companyId = req.query.companyId as string || companies[0].id;
-    const custs = customers.filter((c) => c.companyId === companyId);
-    res.json(custs);
-  });
 
   app.get('/api/appointments', (req, res) => {
     const companyId = req.query.companyId as string || companies[0].id;
