@@ -32,7 +32,12 @@ create table frontdeskai.calls (
             transcript text,
               sentiment text,
                 duration_seconds int,
-                  created_at timestamptz not null default now()
+                status text,
+intent_detected text,
+key_topics text[],
+appointment_booked boolean not null default false,
+appointment_details jsonb,
+  created_at timestamptz not null default now()
 );
 
 create table frontdeskai.appointments (
