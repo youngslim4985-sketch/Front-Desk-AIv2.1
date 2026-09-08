@@ -29,7 +29,7 @@ create table frontdeskai.calls (
       id uuid primary key default gen_random_uuid(),
         company_id uuid not null references frontdeskai.companies(id),
           customer_id uuid references frontdeskai.customers(id),
-            transcript text,
+            transcript jsonb,
               sentiment text,
                 duration_seconds int,
                 status text,
