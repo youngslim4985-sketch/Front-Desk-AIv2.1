@@ -6,6 +6,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { postgresResearchRouter } from './server/routes/postgresResearch';
 import companiesRouter from './server/companies.route';
 import customersRouter from './server/customers.route';
+import appointmentsRouter from './server/appointments.route';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -139,6 +140,7 @@ const apiLimiter = rateLimit({
 app.use('/api', apiLimiter);
   app.use(companiesRouter);
     app.use(customersRouter);
+    app.use(appointmentsRouter);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -592,32 +594,6 @@ Your Responsibilities:
   });
 
 
-  app.get('/api/appointments', (req, res) => {
-    const companyId = req.query.companyId as string || companies[0].id;
-    const apts = appointments.filter((a) => a.companyId === companyId);
-    res.json(apts);
-  });
-
-  app.post('/api/appointments', (req, res) => {
-    const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
-      status: 'confirmed',
-      bookedBy: 'manual',
-      ...req.body,
-    };
-    appointments.unshift(newApt);
-    res.status(201).json(newApt);
-  });
-
-  app.put('/api/appointments/:id', (req, res) => {
-    const { id } = req.params;
-    const idx = appointments.findIndex((a) => a.id === id);
-    if (idx !== -1) {
-      appointments[idx] = { ...appointments[idx], ...req.body };
-      return res.json(appointments[idx]);
-    }
-    res.status(404).json({ error: 'Appointment not found' });
-  });
 
   // --- VITE / STATIC SERVING ---
   if (process.env.NODE_ENV !== 'production') {
