@@ -41,7 +41,11 @@ create table frontdeskai.appointments (
           customer_id uuid references frontdeskai.customers(id),
             scheduled_at timestamptz,
               status text,
-                created_at timestamptz not null default now()
+               service_name text,
+duration_minutes int,
+booked_by text,
+notes text,
+created_at timestamptz not null default now()
 );
 
 create table frontdeskai.documents (
