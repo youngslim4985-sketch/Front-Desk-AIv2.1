@@ -43,4 +43,50 @@ router.get('/api/companies', async (req, res) => {
   }
 });
 
+
+router.post('/api/companies', async (req, res) => {
+  const { name } = req.body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Company name is required' });
+  }
+
+  const rawApiKey = `fdai_${crypto.randomBytes(32).toString('hex')}`;
+  const apiKeyHash = hashApiKey(rawApiKey);
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const companyResult = await client.query(
+      `insert into frontdeskai.companies (name, api_key_hash)
+       values ($1, $2)
+       returning id, name, created_at`,
+      [name.trim(), apiKeyHash]
+    );
+
+    const company = companyResult.rows[0];
+
+    await client.query(
+      `select set_config('app.current_company_id', $1, true)`,
+      [company.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      company,
+      apiKey: rawApiKey,
+      warning: 'Save this API key securely. It will not be shown again.'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/companies failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

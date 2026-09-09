@@ -155,52 +155,6 @@ app.use('/api', apiLimiter);
   // --- API ENDPOINTS ---
 
   // 1. Companies & Settings
-  app.get('/api/companies', (req, res) => {
-    res.json(companies);
-  });
-
-  app.post('/api/companies', (req, res) => {
-    const { name, industry, aiPersonality, customGreeting } = req.body;
-    const newCompany: Company = {
-      id: `comp-${Date.now()}`,
-      name: name || 'New Business',
-      industry: industry || 'General Business',
-      businessHours: {
-        weekdays: '9:00 AM - 5:00 PM EST',
-        saturday: '10:00 AM - 2:00 PM EST',
-        sunday: 'Closed',
-      },
-      services: [
-        { id: 's1', name: 'General Consultation', duration: '30 mins', price: '$100', description: 'Standard introductory appointment.' },
-      ],
-      policies: [
-        { id: 'p1', title: 'Cancellation Policy', content: '24 hours notice required for cancellations.' },
-      ],
-      aiPersonality: aiPersonality || 'warm_friendly',
-      customGreeting: customGreeting || `Thank you for calling ${name || 'our business'}! I am your AI receptionist. How may I assist you today?`,
-      voiceTone: 'Professional, friendly, and helpful.',
-      voiceConfig: { ...DEFAULT_VOICE_CONFIG },
-      transferPhoneNumber: '+1 (555) 000-1234',
-      afterHoursMode: 'ai_receptionist',
-    };
-
-    companies.push(newCompany);
-
-    // Default Phone Config
-    phoneConfigs[newCompany.id] = {
-      id: `phone-${Date.now()}`,
-      companyId: newCompany.id,
-      mode: 'ai_generated',
-      phoneNumber: `+1 (555) ${Math.floor(100 + Math.random() * 900)}-${Math.floor(1000 + Math.random() * 9000)}`,
-      forwardingNumber: '+1 (555) 000-1234',
-      isTransferEnabled: true,
-      afterHoursAiEnabled: true,
-      smsConfirmationEnabled: true,
-      setupStatus: 'configured',
-    };
-
-    res.status(201).json(newCompany);
-  });
 
   // ElevenLabs Voice Management Endpoints
   app.get('/api/voice/voices', async (_req, res) => {
