@@ -7,6 +7,7 @@ import { postgresResearchRouter } from './server/routes/postgresResearch';
 import companiesRouter from './server/companies.route';
 import customersRouter from './server/customers.route';
 import appointmentsRouter from './server/appointments.route';
+import callsRouter from './server/calls.route';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -141,6 +142,7 @@ app.use('/api', apiLimiter);
   app.use(companiesRouter);
     app.use(customersRouter);
     app.use(appointmentsRouter);
+    app.use(callsRouter);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -577,21 +579,6 @@ Your Responsibilities:
   });
 
   // 5. Calls, Customers, & Appointments
-  app.get('/api/calls', (req, res) => {
-    const companyId = req.query.companyId as string || companies[0].id;
-    const logs = callLogs.filter((c) => c.companyId === companyId);
-    res.json(logs);
-  });
-
-  app.post('/api/calls', (req, res) => {
-    const newCall: CallLog = {
-      id: `call-${Date.now()}`,
-      timestamp: new Date().toLocaleString(),
-      ...req.body,
-    };
-    callLogs.unshift(newCall);
-    res.status(201).json(newCall);
-  });
 
 
 
