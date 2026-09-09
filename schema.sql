@@ -64,12 +64,42 @@ created_at timestamptz not null default now()
 );
 
 create table frontdeskai.documents (
-      id uuid primary key default gen_random_uuid(),
-        company_id uuid not null references frontdeskai.companies(id),
-          filename text,
-            summary text,
-              created_at timestamptz not null default now()
+    id uuid primary key default gen_random_uuid(),
+    company_id uuid not null references frontdeskai.companies(id),
+    filename text,
+    title text not null,
+    category text not null default 'other',
+    file_size text,
+    raw_text text,
+    summary text,
+    status text not null default 'processing',
+    page_count int not null default 0,
+    chunk_count int not null default 0,
+    created_at timestamptz not null default now()
 );
+
+alter table frontdeskai.documents
+    add constraint documents_company_unique unique (id, company_id);
+
+create table frontdeskai.document_chunks (
+    id text primary key,
+    document_id uuid not null,
+    company_id uuid not null,
+    chunk_index int not null,
+    page_number int,
+    content text not null,
+    created_at timestamptz not null default now(),
+    constraint document_chunks_document_company_fk
+      foreign key (document_id, company_id)
+      references frontdeskai.documents(id, company_id)
+      on delete cascade
+);
+
+create index document_chunks_company_idx
+    on frontdeskai.document_chunks(company_id);
+
+create index document_chunks_document_idx
+    on frontdeskai.document_chunks(document_id);
 
 alter table frontdeskai.customers
   add constraint customers_company_unique unique (id, company_id);
@@ -104,6 +134,8 @@ alter table frontdeskai.customers
                 alter table frontdeskai.appointments   force row level security;
                 alter table frontdeskai.documents      enable row level security;
                 alter table frontdeskai.documents      force row level security;
+        alter table frontdeskai.document_chunks enable row level security;
+        alter table frontdeskai.document_chunks force row level security;
                 alter table frontdeskai.companies      enable row level security;
                 alter table frontdeskai.companies      force row level security;
 
@@ -127,10 +159,15 @@ alter table frontdeskai.customers
                                       using (company_id = frontdeskai.frontdeskai_current_company_id())
                                         with check (company_id = frontdeskai.frontdeskai_current_company_id());
 
-                                        create policy tenant_isolation on frontdeskai.documents
-                                          for all
-                                            using (company_id = frontdeskai.frontdeskai_current_company_id())
-                                              with check (company_id = frontdeskai.frontdeskai_current_company_id());
+        create policy tenant_isolation on frontdeskai.documents
+            for all
+            using (company_id = frontdeskai.frontdeskai_current_company_id())
+            with check (company_id = frontdeskai.frontdeskai_current_company_id());
+
+        create policy tenant_isolation on frontdeskai.document_chunks
+            for all
+            using (company_id = frontdeskai.frontdeskai_current_company_id())
+            with check (company_id = frontdeskai.frontdeskai_current_company_id());
 
                                               create policy self_only on frontdeskai.companies
                                                 for select

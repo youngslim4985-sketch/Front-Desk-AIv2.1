@@ -9,6 +9,8 @@ import customersRouter from './server/customers.route';
 import appointmentsRouter from './server/appointments.route';
 import callsRouter from './server/calls.route';
 import settingsRouter from './server/settings.route';
+import knowledgeRouter from './server/knowledge.route';
+import { searchKnowledgeChunks } from './server/knowledge.service';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -61,68 +63,6 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
-// Simple text chunker for RAG pipeline
-function chunkText(text: string, title: string, docId: string): DocumentChunk[] {
-  const sentences = text.split(/(?<=[.!?])\s+/);
-  const chunks: DocumentChunk[] = [];
-  let currentChunk = '';
-  let chunkIndex = 0;
-
-  for (let i = 0; i < sentences.length; i++) {
-    currentChunk += sentences[i] + ' ';
-    if (currentChunk.length > 400 || i === sentences.length - 1) {
-      if (currentChunk.trim().length > 0) {
-        chunks.push({
-          id: `chunk-${docId}-${chunkIndex}`,
-          documentId: docId,
-          chunkIndex,
-          pageNumber: Math.floor(chunkIndex / 2) + 1,
-          content: currentChunk.trim(),
-        });
-        chunkIndex++;
-        currentChunk = '';
-      }
-    }
-  }
-
-  return chunks;
-}
-
-// Simple semantic keyword search over company chunks
-function searchKnowledgeChunks(companyId: string, query: string, topK = 4) {
-  const companyDocs = documents.filter((d) => d.companyId === companyId && d.status === 'indexed');
-  const allChunks: (DocumentChunk & { docTitle: string; docCategory: string })[] = [];
-
-  for (const doc of companyDocs) {
-    for (const chunk of doc.chunks) {
-      allChunks.push({
-        ...chunk,
-        docTitle: doc.title,
-        docCategory: doc.category,
-      });
-    }
-  }
-
-  if (allChunks.length === 0) return [];
-
-  const queryTerms = query.toLowerCase().split(/\W+/).filter((t) => t.length > 2);
-  
-  const scoredChunks = allChunks.map((chunk) => {
-    let score = 0;
-    const contentLower = chunk.content.toLowerCase();
-    const titleLower = chunk.docTitle.toLowerCase();
-
-    for (const term of queryTerms) {
-      if (contentLower.includes(term)) score += 3;
-      if (titleLower.includes(term)) score += 5;
-    }
-
-    return { ...chunk, score };
-  });
-
-  scoredChunks.sort((a, b) => (b.score || 0) - (a.score || 0));
-  return scoredChunks.slice(0, topK);
-}
 
 async function startServer() {
   const app = express();
@@ -145,6 +85,7 @@ app.use('/api', apiLimiter);
     app.use(appointmentsRouter);
     app.use(callsRouter);
     app.use(settingsRouter);
+    app.use(knowledgeRouter);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -214,82 +155,6 @@ app.use('/api', apiLimiter);
     }
   });
 
-
-  // 2. Knowledge Base & PDF RAG Ingestion
-  app.get('/api/knowledge/documents', (req, res) => {
-    const companyId = req.query.companyId as string || companies[0].id;
-    const docs = documents.filter((d) => d.companyId === companyId);
-    res.json(docs);
-  });
-
-  app.post('/api/knowledge/upload', async (req, res) => {
-    try {
-      const { companyId, title, category, rawText, filename, fileSize } = req.body;
-      if (!companyId || !title || (!rawText && !filename)) {
-        return res.status(400).json({ error: 'Missing required parameters (companyId, title, rawText or file)' });
-      }
-
-      const textContent = rawText || `Document Title: ${title}\nCategory: ${category}\n\nContents:\nProvided company operational guidelines, procedures, service list, and staff directory for ${title}.`;
-      const docId = `doc-${Date.now()}`;
-
-      // Generate Chunks
-      const chunks = chunkText(textContent, title, docId);
-
-      // Summarize with Gemini if key exists
-      let summary = `Operational knowledge document "${title}" containing ${chunks.length} structured text chunks covering company procedures and guidelines.`;
-      if (process.env.GEMINI_API_KEY) {
-        try {
-          const ai = getGeminiClient();
-          const response = await ai.models.generateContent({
-            model: 'gemini-3.6-flash',
-            contents: `Briefly summarize this document for an AI Receptionist knowledge base in 2-3 sentences:\n\nTitle: ${title}\nCategory: ${category}\nText:\n${textContent.slice(0, 1500)}`,
-          });
-          if (response.text) {
-            summary = response.text.trim();
-          }
-        } catch (e) {
-          console.error("Error summarizing document with Gemini:", e);
-        }
-      }
-
-      const newDoc: KnowledgeDocument = {
-        id: docId,
-        companyId,
-        filename: filename || `${title.toLowerCase().replace(/\s+/g, '_')}.pdf`,
-        title,
-        category: category || 'other',
-        fileSize: fileSize || '1.2 MB',
-        uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        status: 'indexed',
-        pageCount: Math.ceil(chunks.length / 2) || 1,
-        chunkCount: chunks.length,
-        chunks,
-        summary,
-      };
-
-      documents.push(newDoc);
-      res.status(201).json(newDoc);
-    } catch (err: any) {
-      console.error("Error processing document upload:", err);
-      res.status(500).json({ error: 'Failed to ingest knowledge document' });
-    }
-  });
-
-  app.post('/api/knowledge/search', (req, res) => {
-    const { companyId, query } = req.body;
-    if (!companyId || !query) {
-      return res.status(400).json({ error: 'Missing companyId or query' });
-    }
-    const results = searchKnowledgeChunks(companyId, query, 5);
-    res.json({ query, chunks: results });
-  });
-
-  app.delete('/api/knowledge/documents/:id', (req, res) => {
-    const { id } = req.params;
-    documents = documents.filter((d) => d.id !== id);
-    res.json({ success: true });
-  });
-
   // 3. Phone Configuration & Provisioning
   app.get('/api/phone', (req, res) => {
     const companyId = req.query.companyId as string || companies[0].id;
@@ -344,7 +209,7 @@ app.use('/api', apiLimiter);
       const phoneConfig = phoneConfigs[companyId] || INITIAL_PHONE_CONFIGS['comp-apex-dental'];
 
       // RAG Retrieval step
-      const ragChunks = searchKnowledgeChunks(companyId, userMessage, 3);
+      const ragChunks = await searchKnowledgeChunks(companyId, userMessage, 3);
       const ragContextText = ragChunks.length > 0
         ? ragChunks.map((c, i) => `[Source ${i+1}: ${c.docTitle}] "${c.content}"`).join('\n\n')
         : 'No specific PDF documents matched this query. Refer to core company services and policies.';
