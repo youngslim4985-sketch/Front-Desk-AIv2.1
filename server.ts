@@ -8,6 +8,7 @@ import companiesRouter from './server/companies.route';
 import customersRouter from './server/customers.route';
 import appointmentsRouter from './server/appointments.route';
 import callsRouter from './server/calls.route';
+import settingsRouter from './server/settings.route';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -143,6 +144,7 @@ app.use('/api', apiLimiter);
     app.use(customersRouter);
     app.use(appointmentsRouter);
     app.use(callsRouter);
+    app.use(settingsRouter);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -212,22 +214,6 @@ app.use('/api', apiLimiter);
     }
   });
 
-  app.get('/api/settings', (req, res) => {
-    const companyId = req.query.companyId as string || companies[0].id;
-    const company = companies.find((c) => c.id === companyId) || companies[0];
-    res.json(company);
-  });
-
-  app.put('/api/settings/:companyId', (req, res) => {
-    const { companyId } = req.params;
-    const index = companies.findIndex((c) => c.id === companyId);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Company not found' });
-    }
-
-    companies[index] = { ...companies[index], ...req.body };
-    res.json(companies[index]);
-  });
 
   // 2. Knowledge Base & PDF RAG Ingestion
   app.get('/api/knowledge/documents', (req, res) => {

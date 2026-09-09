@@ -4,6 +4,16 @@ create table frontdeskai.companies (
       id uuid primary key default gen_random_uuid(),
         name text not null,
           api_key_hash text not null unique,
+        industry text,
+        business_hours jsonb not null default '{}'::jsonb,
+        services jsonb not null default '[]'::jsonb,
+        policies jsonb not null default '[]'::jsonb,
+        ai_personality text,
+        custom_greeting text,
+        voice_tone text,
+        voice_config jsonb,
+        transfer_phone_number text,
+        after_hours_mode text,
             created_at timestamptz not null default now()
 );
 
