@@ -11,6 +11,8 @@ import callsRouter from './server/calls.route';
 import settingsRouter from './server/settings.route';
 import knowledgeRouter from './server/knowledge.route';
 import { searchKnowledgeChunks } from './server/knowledge.service';
+import pool from './server/db';
+import crypto from 'crypto';
 import {
   INITIAL_COMPANIES,
   INITIAL_DOCUMENTS,
@@ -212,6 +214,34 @@ app.use('/api', apiLimiter);
 
     if (!userMessage || typeof userMessage !== 'string') {
       return res.status(400).json({ error: 'userMessage is required' });
+    }
+
+    const apiKey = req.header('x-api-key');
+
+    if (!apiKey) {
+      return res.status(401).json({ error: 'Missing x-api-key header' });
+    }
+
+    const keyHash = crypto
+      .createHash('sha256')
+      .update(apiKey)
+      .digest('hex');
+
+    const authResult = await pool.query(
+      'select id, name from frontdeskai.companies where api_key_hash = $1',
+      [keyHash]
+    );
+
+    const authenticatedCompany = authResult.rows[0];
+
+    if (!authenticatedCompany) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    if (authenticatedCompany.id !== companyId) {
+      return res.status(403).json({
+        error: 'API key is not authorized for this company'
+      });
     }
 
       const company = companies.find((c) => c.id === companyId) || companies[0];
