@@ -99,6 +99,17 @@ router.post('/api/appointments', async (req, res) => {
     });
   }
 
+  if (
+    durationMinutes !== undefined &&
+    (!Number.isInteger(durationMinutes) ||
+      durationMinutes <= 0 ||
+      durationMinutes > 1440)
+  ) {
+    return res.status(400).json({
+      error: 'durationMinutes must be a positive integer no greater than 1440',
+    });
+  }
+
   try {
     const company = await resolveCompany(apiKey);
 
