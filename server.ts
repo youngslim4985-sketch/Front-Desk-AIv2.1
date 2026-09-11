@@ -244,8 +244,36 @@ app.use('/api', apiLimiter);
       });
     }
 
-      const company = companies.find((c) => c.id === companyId) || companies[0];
-      const phoneConfig = phoneConfigs[companyId] || INITIAL_PHONE_CONFIGS['comp-apex-dental'];
+    const companyConfigResult = await pool.query(
+      `
+      select
+        id,
+        name,
+        industry,
+        business_hours as "businessHours",
+        services,
+        policies,
+        ai_personality as "aiPersonality",
+        custom_greeting as "customGreeting",
+        voice_tone as "voiceTone",
+        voice_config as "voiceConfig",
+        transfer_phone_number as "transferPhoneNumber",
+        after_hours_mode as "afterHoursMode"
+      from frontdeskai.companies
+      where id = $1
+      `,
+      [authenticatedCompany.id]
+    );
+
+    const company = companyConfigResult.rows[0];
+
+    if (!company) {
+      return res.status(404).json({
+        error: 'Company configuration not found'
+      });
+    }
+
+    const phoneConfig = company.voiceConfig || {};
 
       // RAG Retrieval step
       const ragChunks = await searchKnowledgeChunks(companyId, userMessage, 3);
