@@ -205,6 +205,15 @@ app.use('/api', apiLimiter);
   app.post('/api/calls/simulate', async (req, res) => {
     try {
       const { companyId, userMessage, history = [], callerName = 'Caller', callerPhone = '+1 (555) 012-3456' } = req.body;
+
+    if (!companyId || typeof companyId !== 'string') {
+      return res.status(400).json({ error: 'companyId is required' });
+    }
+
+    if (!userMessage || typeof userMessage !== 'string') {
+      return res.status(400).json({ error: 'userMessage is required' });
+    }
+
       const company = companies.find((c) => c.id === companyId) || companies[0];
       const phoneConfig = phoneConfigs[companyId] || INITIAL_PHONE_CONFIGS['comp-apex-dental'];
 
