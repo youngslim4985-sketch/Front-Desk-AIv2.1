@@ -99,7 +99,29 @@ router.post('/api/appointments', async (req, res) => {
     }
 
     const result = await withTenant(company.id, async (client) => {
-      const inserted = await client.query(
+      const conflict = await client.query(
+      `
+      select id
+      from frontdeskai.appointments
+      where company_id = $1
+        and status <> 'cancelled'
+        and scheduled_at < ($2::timestamptz + make_interval(mins => $3))
+        and (
+          scheduled_at
+          + make_interval(mins => coalesce(duration_minutes, 30))
+        ) > $2::timestamptz
+      limit 1
+      `,
+      [company.id, datetime, durationMinutes || 30]
+    );
+
+    if (conflict.rows.length > 0) {
+      return res.status(409).json({
+        error: 'Appointment time is already booked'
+      });
+    }
+
+    const inserted = await client.query(
         `insert into frontdeskai.appointments
           (
             company_id,
