@@ -91,6 +91,14 @@ router.post('/api/appointments', async (req, res) => {
     });
   }
 
+  const parsedDate = new Date(datetime);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return res.status(400).json({
+      error: 'datetime must be a valid date',
+    });
+  }
+
   try {
     const company = await resolveCompany(apiKey);
 
