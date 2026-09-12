@@ -11,7 +11,7 @@ import callsRouter from './server/calls.route';
 import settingsRouter from './server/settings.route';
 import knowledgeRouter from './server/knowledge.route';
 import { searchKnowledgeChunks } from './server/knowledge.service';
-import pool from './server/db';
+import pool, { withTenant } from './server/db';
 import crypto from 'crypto';
 import {
   INITIAL_COMPANIES,
@@ -158,22 +158,63 @@ app.use('/api', apiLimiter);
   });
 
   // 3. Phone Configuration & Provisioning
-  app.get('/api/phone', (req, res) => {
-    const companyId = req.query.companyId as string || companies[0].id;
-    const config = phoneConfigs[companyId] || {
-      id: `phone-${Date.now()}`,
-      companyId,
-      mode: 'ai_generated',
-      phoneNumber: '+1 (555) 381-8920',
-      isTransferEnabled: true,
-      afterHoursAiEnabled: true,
-      smsConfirmationEnabled: true,
-      setupStatus: 'configured',
-    };
-    res.json(config);
-  });
+  app.get('/api/phone', async (req, res) => {
+  const apiKey = req.header('x-api-key');
 
-  app.put('/api/phone/:companyId', (req, res) => {
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Missing x-api-key header' });
+  }
+
+  try {
+    const keyHash = crypto
+      .createHash('sha256')
+      .update(apiKey)
+      .digest('hex');
+
+    const authResult = await pool.query(
+      'select id from frontdeskai.companies where api_key_hash = $1',
+      [keyHash]
+    );
+
+    const company = authResult.rows[0];
+
+    if (!company) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    const result = await withTenant(company.id, async (client) => {
+      return client.query(
+        `select
+           id,
+           company_id as "companyId",
+           phone_number as "phoneNumber",
+           voice_id as "voiceId",
+           greeting_script as "greetingScript",
+           created_at as "createdAt"
+         from frontdeskai.phone_configs
+         where company_id = $1
+         order by created_at desc
+         limit 1`,
+        [company.id]
+      );
+    });
+
+    if (!result.rows[0]) {
+      return res.status(404).json({
+        error: 'Phone configuration not found'
+      });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('GET /api/phone failed:', err);
+    return res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
+app.put('/api/phone/:companyId', (req, res) => {
     const { companyId } = req.params;
     phoneConfigs[companyId] = {
       ...(phoneConfigs[companyId] || { id: `phone-${Date.now()}`, companyId }),
