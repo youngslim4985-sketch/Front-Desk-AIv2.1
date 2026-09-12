@@ -285,28 +285,76 @@ app.put('/api/phone/:companyId', async (req, res) => {
   }
 });
 
-app.post('/api/phone/provision', (req, res) => {
-    const { companyId, areaCode } = req.body;
+app.post('/api/phone/provision', async (req, res) => {
+  const apiKey = req.header('x-api-key');
+  const { companyId, areaCode } = req.body;
+
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Missing x-api-key header' });
+  }
+
+  if (!companyId) {
+    return res.status(400).json({ error: 'companyId is required' });
+  }
+
+  try {
+    const keyHash = crypto
+      .createHash('sha256')
+      .update(apiKey)
+      .digest('hex');
+
+    const authResult = await pool.query(
+      'select id from frontdeskai.companies where api_key_hash = $1',
+      [keyHash]
+    );
+
+    const company = authResult.rows[0];
+
+    if (!company) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    if (company.id !== companyId) {
+      return res.status(403).json({
+        error: 'API key is not authorized for this company'
+      });
+    }
+
     const ac = areaCode || '555';
-    const newNumber = `+1 (${ac}) ${Math.floor(200 + Math.random() * 700)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const updatedConfig: PhoneConfig = {
-      ...(phoneConfigs[companyId] || { id: `phone-${Date.now()}`, companyId }),
-      companyId,
-      mode: 'ai_generated',
-      phoneNumber: newNumber,
-      areaCode: ac,
-      setupStatus: 'configured',
-      isTransferEnabled: true,
-      afterHoursAiEnabled: true,
-      smsConfirmationEnabled: true,
-    };
+    const newNumber =
+      `+1 (${ac}) ${Math.floor(200 + Math.random() * 700)}-${Math.floor(
+        1000 + Math.random() * 9000
+      )}`;
 
-    phoneConfigs[companyId] = updatedConfig;
-    res.json(updatedConfig);
-  });
+    const result = await withTenant(company.id, async (client) => {
+      return client.query(
+        `insert into frontdeskai.phone_configs
+           (company_id, phone_number)
+         values ($1, $2)
+         on conflict (company_id)
+         do update set phone_number = excluded.phone_number
+         returning
+           id,
+           company_id as "companyId",
+           phone_number as "phoneNumber",
+           voice_id as "voiceId",
+           greeting_script as "greetingScript",
+           created_at as "createdAt"`,
+        [company.id, newNumber]
+      );
+    });
 
-  // 4. Live Call Simulator (Grounded Gemini Receptionist AI)
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('POST /api/phone/provision failed:', err);
+    return res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
+// 4. Live Call Simulator (Grounded Gemini Receptionist AI)
   app.post('/api/calls/simulate', async (req, res) => {
     try {
       const { companyId, userMessage, history = [], callerName = 'Caller', callerPhone = '+1 (555) 012-3456' } = req.body;
