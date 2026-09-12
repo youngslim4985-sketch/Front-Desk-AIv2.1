@@ -207,6 +207,76 @@ router.put('/api/appointments/:id', async (req, res) => {
     }
 
     const result = await withTenant(company.id, async (client) => {
+      const current = await client.query(
+        `select scheduled_at, duration_minutes, status
+         from frontdeskai.appointments
+         where id = $1
+           and company_id = $2
+         limit 1`,
+        [id, company.id]
+      );
+
+      if (current.rows.length === 0) {
+        return null;
+      }
+
+      const effectiveDatetime =
+        datetime ?? current.rows[0].scheduled_at;
+
+      const effectiveDuration =
+        durationMinutes ?? current.rows[0].duration_minutes ?? 30;
+
+      const effectiveStatus =
+        status ?? current.rows[0].status;
+
+      if (datetime !== undefined) {
+        const parsedDate = new Date(datetime);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+          return { validationError: 'datetime must be a valid date' };
+        }
+      }
+
+      if (
+        durationMinutes !== undefined &&
+        (!Number.isInteger(durationMinutes) ||
+          durationMinutes <= 0 ||
+          durationMinutes > 1440)
+      ) {
+        return {
+          validationError:
+            'durationMinutes must be a positive integer no greater than 1440'
+        };
+      }
+
+      if (effectiveStatus !== 'cancelled') {
+        const conflict = await client.query(
+          `select id
+           from frontdeskai.appointments
+           where company_id = $1
+             and id <> $2
+             and status <> 'cancelled'
+             and scheduled_at < (
+               $3::timestamptz + make_interval(mins => $4)
+             )
+             and (
+               scheduled_at
+               + make_interval(mins => coalesce(duration_minutes, 30))
+             ) > $3::timestamptz
+           limit 1`,
+          [
+            company.id,
+            id,
+            effectiveDatetime,
+            effectiveDuration
+          ]
+        );
+
+        if (conflict.rows.length > 0) {
+          return { conflict: true };
+        }
+      }
+
       const updated = await client.query(
         `update frontdeskai.appointments
          set
@@ -247,6 +317,16 @@ router.put('/api/appointments/:id', async (req, res) => {
 
     if (!result) {
       return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    if (result.validationError) {
+      return res.status(400).json({ error: result.validationError });
+    }
+
+    if (result.conflict) {
+      return res.status(409).json({
+        error: 'Appointment time is already booked'
+      });
     }
 
     res.json(result.rows[0]);
