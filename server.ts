@@ -82,7 +82,117 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api', apiLimiter);
-  app.use(companiesRouter);
+ const BETA_SESSION_COOKIE = 'fdai_beta_session';
+
+function safeEqualStrings(a: string, b: string) {
+  const aBuffer = Buffer.from(a);
+  const bBuffer = Buffer.from(b);
+
+  return (
+    aBuffer.length === bBuffer.length &&
+    crypto.timingSafeEqual(aBuffer, bBuffer)
+  );
+}
+
+function betaSessionToken() {
+  const secret = process.env.FRONTDESK_BETA_SESSION_SECRET;
+  if (!secret) return null;
+
+  return crypto
+    .createHmac('sha256', secret)
+    .update('frontdesk-beta-session')
+    .digest('hex');
+}
+
+function readCookie(req: express.Request, name: string) {
+  const cookieHeader = req.headers.cookie || '';
+
+  for (const cookie of cookieHeader.split(';')) {
+    const [key, ...valueParts] = cookie.trim().split('=');
+
+    if (key === name) {
+      return decodeURIComponent(valueParts.join('='));
+    }
+  }
+
+  return null;
+}
+
+function hasValidBetaSession(req: express.Request) {
+  const expected = betaSessionToken();
+  const received = readCookie(req, BETA_SESSION_COOKIE);
+
+  if (!expected || !received) return false;
+
+  return safeEqualStrings(received, expected);
+}
+
+app.get('/api/session', (req, res) => {
+  res.json({
+    authenticated: hasValidBetaSession(req),
+  });
+});
+
+app.post('/api/session/login', (req, res) => {
+  const configuredAccessCode =
+    process.env.FRONTDESK_BETA_ACCESS_CODE;
+
+  const tenantApiKey =
+    process.env.FRONTDESK_BETA_API_KEY;
+
+  const token = betaSessionToken();
+
+  const submittedAccessCode =
+    typeof req.body?.accessCode === 'string'
+      ? req.body.accessCode
+      : '';
+
+  if (!configuredAccessCode || !tenantApiKey || !token) {
+    return res.status(503).json({
+      error: 'Beta access is not configured on the server',
+    });
+  }
+
+  if (!safeEqualStrings(submittedAccessCode, configuredAccessCode)) {
+    return res.status(401).json({
+      error: 'Invalid access code',
+    });
+  }
+
+  res.setHeader(
+    'Set-Cookie',
+    `${BETA_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`
+  );
+
+  return res.json({
+    authenticated: true,
+  });
+});
+
+app.post('/api/session/logout', (_req, res) => {
+  res.setHeader(
+    'Set-Cookie',
+    `${BETA_SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`
+  );
+
+  res.json({
+    authenticated: false,
+  });
+});
+
+app.use('/api', (req, _res, next) => {
+  if (!req.header('x-api-key') && hasValidBetaSession(req)) {
+    const tenantApiKey =
+      process.env.FRONTDESK_BETA_API_KEY;
+
+    if (tenantApiKey) {
+      req.headers['x-api-key'] = tenantApiKey;
+    }
+  }
+
+  next();
+});
+ app.use(companiesRouter);
     app.use(customersRouter);
     app.use(appointmentsRouter);
     app.use(callsRouter);
