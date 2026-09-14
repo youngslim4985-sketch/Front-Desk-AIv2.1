@@ -9,11 +9,41 @@ import {
 } from '../types';
 
 export const api = {
+  // Beta session authentication
+  getSession: async (): Promise<{ authenticated: boolean }> => {
+    const res = await fetch('/api/session');
+    if (!res.ok) throw new Error('Failed to check session');
+    return res.json();
+  },
+
+  login: async (accessCode: string): Promise<{ authenticated: boolean }> => {
+    const res = await fetch('/api/session/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessCode }),
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new Error(payload?.error || 'Unable to sign in');
+    }
+
+    return res.json();
+  },
+
+  logout: async (): Promise<void> => {
+    await fetch('/api/session/logout', {
+      method: 'POST',
+    });
+  },
+
   // Companies & Settings
   getCompanies: async (): Promise<Company[]> => {
     const res = await fetch('/api/companies');
     if (!res.ok) throw new Error('Failed to fetch companies');
-    return res.json();
+
+    const payload = await res.json();
+    return payload.companies || [];
   },
 
   createCompany: async (data: { name: string; industry: string; aiPersonality: string; customGreeting?: string }): Promise<Company> => {
