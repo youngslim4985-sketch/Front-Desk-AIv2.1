@@ -365,28 +365,30 @@ app.put('/api/phone/:companyId', async (req, res) => {
     }
 
     const result = await withTenant(company.id, async (client) => {
-      return client.query(
-        `update frontdeskai.phone_configs
-         set
-           phone_number = coalesce($1, phone_number),
-           voice_id = coalesce($2, voice_id),
-           greeting_script = coalesce($3, greeting_script)
-         where company_id = $4
-         returning
-           id,
-           company_id as "companyId",
-           phone_number as "phoneNumber",
-           voice_id as "voiceId",
-           greeting_script as "greetingScript",
-           created_at as "createdAt"`,
-        [
-          phoneNumber ?? null,
-          voiceId ?? null,
-          greetingScript ?? null,
-          company.id
-        ]
-      );
-    });
+  return client.query(
+    `insert into frontdeskai.phone_configs
+      (company_id, phone_number, voice_id, greeting_script)
+     values ($1, $2, $3, $4)
+     on conflict (company_id)
+     do update set
+       phone_number = coalesce(excluded.phone_number, frontdeskai.phone_configs.phone_number),
+       voice_id = coalesce(excluded.voice_id, frontdeskai.phone_configs.voice_id),
+       greeting_script = coalesce(excluded.greeting_script, frontdeskai.phone_configs.greeting_script)
+     returning
+       id,
+       company_id as "companyId",
+       phone_number as "phoneNumber",
+       voice_id as "voiceId",
+       greeting_script as "greetingScript",
+       created_at as "createdAt"`,
+    [
+      company.id,
+      phoneNumber ?? null,
+      voiceId ?? null,
+      greetingScript ?? null
+    ]
+  );
+});
 
     if (!result.rows[0]) {
       return res.status(404).json({
