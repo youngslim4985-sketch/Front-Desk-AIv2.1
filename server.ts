@@ -388,7 +388,7 @@ app.put('/api/phone/:companyId', async (req, res) => {
       greetingScript ?? null
     ]
   );
-});
+})
 
     if (!result.rows[0]) {
       return res.status(404).json({
