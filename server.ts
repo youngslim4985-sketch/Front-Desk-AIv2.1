@@ -361,7 +361,7 @@ app.put('/api/phone/:companyId', async (req, res) => {
     
 
    const result = await withTenant(company.id, async (client) => {
-  return client.query(
+    return client.query(
     `select
        id,
        company_id as "companyId",
@@ -374,13 +374,7 @@ app.put('/api/phone/:companyId', async (req, res) => {
      limit 1`,
     [company.id]
   );
-}); 
-
-    if (!result.rows[0]) {
-      return res.status(404).json({
-        error: 'Phone configuration not found'
-      });
-    }
+});
 
     return res.json(result.rows[0]);
   } catch (err) {
