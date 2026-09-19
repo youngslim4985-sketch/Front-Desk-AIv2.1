@@ -348,27 +348,45 @@ app.put('/api/phone/:companyId', async (req, res) => {
       return res.status(401).json({ error: 'Invalid API key' });
     }
 
-    
+    if (company.id !== companyId) {
+      return res.status(403).json({
+        error: 'API key is not authorized for this company'
+      });
+    }
 
-   const result = await withTenant(company.id, async (client) => {
-    return client.query(
-    `select
-       id,
-       company_id as "companyId",
-       phone_number as "phoneNumber",
-       voice_id as "voiceId",
-       greeting_script as "greetingScript",
-       created_at as "createdAt"
-     from frontdeskai.phone_configs
-     where company_id = $1
-     limit 1`,
-    [company.id]
-  );
-});
+    const result = await withTenant(company.id, async (client) => {
+      return client.query(
+        `update frontdeskai.phone_configs
+         set
+           phone_number = coalesce($1, phone_number),
+           voice_id = coalesce($2, voice_id),
+           greeting_script = coalesce($3, greeting_script)
+         where company_id = $4
+         returning
+           id,
+           company_id as "companyId",
+           phone_number as "phoneNumber",
+           voice_id as "voiceId",
+           greeting_script as "greetingScript",
+           created_at as "createdAt"`,
+        [
+          phoneNumber ?? null,
+          voiceId ?? null,
+          greetingScript ?? null,
+          company.id
+        ]
+      );
+    });
+
+    if (!result.rows[0]) {
+      return res.status(404).json({
+        error: 'Phone configuration not found'
+      });
+    }
 
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error('GET /api/phone failed:', err);
+    console.error('PUT /api/phone/:companyId failed:', err);
     return res.status(500).json({
       error: 'Internal server error'
     });
