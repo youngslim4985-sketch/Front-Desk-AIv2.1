@@ -465,7 +465,7 @@ app.post('/api/phone/provision', async (req, res) => {
 // 4. Live Call Simulator (Grounded Gemini Receptionist AI)
   app.post('/api/calls/simulate', async (req, res) => {
     try {
-      const { companyId, userMessage, history = [], callerName = 'Caller', callerPhone = '+1 (555) 012-3456' } = req.body;
+      const { companyId, userMessage, history = [], callerName = 'Caller', callerPhone = '+1 (555) 012-3456', appointmentDatetime } = req.body;
 
     if (!companyId || typeof companyId !== 'string') {
       return res.status(400).json({ error: 'companyId is required' });
@@ -755,27 +755,113 @@ Your Responsibilities:
         const lowerMsg = userMessage.toLowerCase();
         if (lowerMsg.includes('book') || lowerMsg.includes('schedule') || lowerMsg.includes('appointment')) {
           const matchedService = company.services[0]?.name || 'Consultation';
-          const newApt: Appointment = {
-            id: `apt-${Date.now()}`,
-            companyId,
-            customerId: `cust-${Date.now()}`,
-            customerName: callerName,
-            customerPhone: callerPhone,
-            serviceName: matchedService,
-            datetime: 'Next Tuesday at 10:00 AM',
-            durationMinutes: 45,
-            status: 'confirmed',
-            bookedBy: 'ai_receptionist',
-            notes: 'Booked via AI Receptionist Simulation.',
-          };
-          appointments.push(newApt);
+        const datetime = appointmentDatetime;
+
+        if (!datetime || Number.isNaN(new Date(datetime).getTime())) {
+          responseText =
+            'I need a valid appointment date and time before I can book that.';
           toolCallExecuted = {
             toolName: 'schedule_appointment',
-            args: { callerName, serviceName: matchedService, datetime: newApt.datetime },
-            result: `Appointment confirmed for ${callerName} on ${newApt.datetime}`,
+            args: { callerName, serviceName: matchedService, datetime },
+            result: 'Booking rejected: invalid appointment date/time',
           };
-          responseText = `I would be happy to book that for you! I have confirmed your appointment for ${matchedService} on ${newApt.datetime}. An SMS notification has been sent.`;
-        } else if (lowerMsg.includes('human') || lowerMsg.includes('speak to someone') || lowerMsg.includes('emergency')) {
+        } else {
+          const durationMinutes = 45;
+
+          const booking = await withTenant(companyId, async (client) => {
+            const customerResult = await client.query(
+              `insert into frontdeskai.customers
+                (company_id, name, phone)
+               values ($1, $2, $3)
+               on conflict (company_id, phone)
+               do update set name = excluded.name
+               returning id, name, phone`,
+              [companyId, callerName, callerPhone]
+            );
+
+            const customer = customerResult.rows[0];
+
+            const conflict = await client.query(
+              `select id
+               from frontdeskai.appointments
+               where company_id = $1
+                 and status <> 'cancelled'
+                 and scheduled_at < ($2::timestamptz + make_interval(mins => $3))
+                 and (
+                   scheduled_at
+                   + make_interval(mins => coalesce(duration_minutes, 30))
+                 ) > $2::timestamptz
+               limit 1`,
+              [companyId, datetime, durationMinutes]
+            );
+
+            if (conflict.rows.length > 0) {
+              return { conflict: true, appointment: null };
+            }
+
+            const inserted = await client.query(
+              `insert into frontdeskai.appointments
+                (
+                  company_id,
+                  customer_id,
+                  scheduled_at,
+                  status,
+                  service_name,
+                  duration_minutes,
+                  booked_by,
+                  notes
+                )
+               values ($1, $2, $3, $4, $5, $6, $7, $8)
+               returning
+                 id,
+                 company_id as "companyId",
+                 customer_id as "customerId",
+                 scheduled_at as "datetime",
+                 status,
+                 service_name as "serviceName",
+                 duration_minutes as "durationMinutes",
+                 booked_by as "bookedBy",
+                 notes`,
+              [
+                companyId,
+                customer.id,
+                datetime,
+                'confirmed',
+                matchedService,
+                durationMinutes,
+                'ai_receptionist',
+                'Booked via AI Receptionist Simulation.',
+              ]
+            );
+
+            return {
+              conflict: false,
+              appointment: inserted.rows[0],
+            };
+          });
+
+          if (booking.conflict) {
+            toolCallExecuted = {
+              toolName: 'schedule_appointment',
+              args: { callerName, serviceName: matchedService, datetime },
+              result: 'Appointment time is already booked',
+            };
+            responseText =
+              'That appointment time is already booked. Please choose another time.';
+          } else {
+            const newApt = booking.appointment;
+
+            toolCallExecuted = {
+              toolName: 'schedule_appointment',
+              args: { callerName, serviceName: matchedService, datetime },
+              result: `Appointment ${newApt.id} confirmed for ${callerName} on ${newApt.datetime}`,
+            };
+
+            responseText =
+              `Wonderful, ${callerName}! I have scheduled your ${matchedService} for ${newApt.datetime}. Is there anything else I can help you with today?`;
+          }
+        }
+      } else if (lowerMsg.includes('human') || lowerMsg.includes('speak to someone') || lowerMsg.includes('emergency')) {
           toolCallExecuted = {
             toolName: 'transfer_to_human',
             args: { reason: 'Caller requested human assistant', targetPhone: company.transferPhoneNumber },
