@@ -576,7 +576,10 @@ Your Responsibilities:
                 properties: {
                   callerName: { type: Type.STRING, description: 'Full name of caller' },
                   serviceName: { type: Type.STRING, description: 'Name of service requested' },
-                  datetime: { type: Type.STRING, description: 'Preferred date and time' },
+                  datetime: {
+              type: Type.STRING,
+              description: 'Appointment date and time as a valid ISO 8601 timestamp including timezone offset, for example 2026-09-22T10:00:00-05:00'
+            },
                 },
                 required: ['callerName', 'serviceName', 'datetime'],
               },
@@ -627,30 +630,116 @@ Your Responsibilities:
 
         if (geminiRes.functionCalls && geminiRes.functionCalls.length > 0) {
           const fc = geminiRes.functionCalls[0];
-          if (fc.name === 'schedule_appointment') {
-            const args = fc.args as any;
-            const newApt: Appointment = {
-              id: `apt-${Date.now()}`,
-              companyId,
-              customerId: `cust-${Date.now()}`,
-              customerName: args.callerName || callerName,
-              customerPhone: callerPhone,
-              serviceName: args.serviceName || 'General Service',
-              datetime: args.datetime || 'Tomorrow 10:00 AM',
-              durationMinutes: 45,
-              status: 'confirmed',
-              bookedBy: 'ai_receptionist',
-              notes: 'Booked via AI Receptionist Live Call.',
+      if (fc.name === 'schedule_appointment') {
+        const args = fc.args as any;
+        const customerName = args.callerName || callerName;
+        const serviceName = args.serviceName || 'General Service';
+        const datetime = args.datetime;
+        const durationMinutes = 45;
+
+        if (!datetime || Number.isNaN(new Date(datetime).getTime())) {
+          responseText =
+            'I need a valid appointment date and time before I can book that.';
+          toolCallExecuted = {
+            toolName: 'schedule_appointment',
+            args,
+            result: 'Booking rejected: invalid appointment date/time',
+          };
+        } else {
+          const booking = await withTenant(companyId, async (client) => {
+            const customerResult = await client.query(
+              `insert into frontdeskai.customers
+                 (company_id, name, phone)
+               values ($1, $2, $3)
+               on conflict (company_id, phone)
+               do update set name = excluded.name
+               returning id, name, phone`,
+              [companyId, customerName, callerPhone]
+            );
+
+            const customer = customerResult.rows[0];
+
+            const conflict = await client.query(
+              `select id
+                 from frontdeskai.appointments
+                where company_id = $1
+                  and status <> 'cancelled'
+                  and scheduled_at < ($2::timestamptz + make_interval(mins => $3))
+                  and (
+                    scheduled_at
+                    + make_interval(mins => coalesce(duration_minutes, 30))
+                  ) > $2::timestamptz
+                limit 1`,
+              [companyId, datetime, durationMinutes]
+            );
+
+            if (conflict.rows.length > 0) {
+              return { conflict: true, appointment: null };
+            }
+
+            const inserted = await client.query(
+              `insert into frontdeskai.appointments
+                 (
+                   company_id,
+                   customer_id,
+                   scheduled_at,
+                   status,
+                   service_name,
+                   duration_minutes,
+                   booked_by,
+                   notes
+                 )
+               values ($1, $2, $3, $4, $5, $6, $7, $8)
+               returning
+                 id,
+                 company_id as "companyId",
+                 customer_id as "customerId",
+                 scheduled_at as "datetime",
+                 status,
+                 service_name as "serviceName",
+                 duration_minutes as "durationMinutes",
+                 booked_by as "bookedBy",
+                 notes`,
+              [
+                companyId,
+                customer.id,
+                datetime,
+                'confirmed',
+                serviceName,
+                durationMinutes,
+                'ai_receptionist',
+                'Booked via AI Receptionist Live Call.',
+              ]
+            );
+
+            return {
+              conflict: false,
+              appointment: inserted.rows[0],
             };
-            appointments.push(newApt);
+          });
+
+          if (booking.conflict) {
             toolCallExecuted = {
               toolName: 'schedule_appointment',
               args,
-              result: `Appointment confirmed for ${newApt.customerName} on ${newApt.datetime}`,
+              result: 'Appointment time is already booked',
             };
-            responseText = `Wonderful, ${newApt.customerName}! I have scheduled your ${newApt.serviceName} for ${newApt.datetime}. You will receive an SMS confirmation on ${callerPhone}. Is there anything else I can help you with today?`;
-          } else if (fc.name === 'transfer_to_human') {
-            const args = fc.args as any;
+            responseText =
+              'That appointment time is already booked. Please choose another time.';
+          } else {
+            const newApt = booking.appointment;
+
+            toolCallExecuted = {
+              toolName: 'schedule_appointment',
+              args,
+              result: `Appointment ${newApt.id} confirmed for ${customerName} on ${newApt.datetime}`,
+            };
+
+            responseText =
+              `Wonderful, ${customerName}! I have scheduled your ${serviceName} for ${newApt.datetime}. Is there anything else I can help you with today?`;
+          }
+        }
+      } else if (fc.name === 'transfer_to_human') {            const args = fc.args as any;
             toolCallExecuted = {
               toolName: 'transfer_to_human',
               args,
