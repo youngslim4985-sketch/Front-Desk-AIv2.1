@@ -9,6 +9,7 @@ import customersRouter from './server/customers.route';
 import appointmentsRouter from './server/appointments.route';
 import callsRouter from './server/calls.route';
 import settingsRouter from './server/settings.route';
+import billingRouter from './server/billing.route';
 import knowledgeRouter from './server/knowledge.route';
 import { searchKnowledgeChunks } from './server/knowledge.service';
 import pool, { withTenant } from './server/db';
@@ -198,8 +199,9 @@ app.use('/api', (req, _res, next) => {
     app.use(callsRouter);
     app.use(settingsRouter);
     app.use(knowledgeRouter);
-
-  // API Health Check
+    app.use(billingRouter);
+ 
+    // API Health Check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
