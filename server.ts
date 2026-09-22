@@ -1,3 +1,4 @@
+import billingWebhookRouter from './server/billing.webhook';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import path from 'path';
@@ -71,7 +72,7 @@ async function startServer() {
   const app = express();
 app.set('trust proxy', 1);
   const PORT = 3000;
-
+ app.use(billingWebhookRouter);
   app.use(express.json({ limit: '20mb' }));
 
 const apiLimiter = rateLimit({
