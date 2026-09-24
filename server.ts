@@ -14,6 +14,7 @@ import billingRouter from './server/billing.route';
 import knowledgeRouter from './server/knowledge.route';
 import { searchKnowledgeChunks } from './server/knowledge.service';
 import pool, { withTenant } from './server/db';
+import { requireActiveSubscription } from './server/auth.middleware';
 import crypto from 'crypto';
 import {
   INITIAL_COMPANIES,
@@ -207,6 +208,18 @@ app.use('/api', (req, _res, next) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+// Temporary subscription access test
+app.get(
+  '/api/subscription-test',
+  requireActiveSubscription,
+  (req, res) => {
+    res.json({
+      status: 'ok',
+      message: 'Subscription access granted',
+      company: res.locals.company
+    });
+  }
+);
   // PostgreSQL Subtransactions, SLRU & Internals Research Router
   app.use('/api/postgres-research', postgresResearchRouter);
 
