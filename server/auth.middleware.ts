@@ -5,7 +5,8 @@ import pool from './db';
 export type AuthenticatedCompany = {
   id: string;
   name: string;
-  subscription_status: string | null;
+ stripe_subscription_id: string | null;
+ subscription_status: string | null;
   plan: string | null;
   trial_ends_at: Date | null;
   current_period_end: Date | null;
