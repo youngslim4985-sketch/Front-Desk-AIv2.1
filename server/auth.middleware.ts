@@ -26,6 +26,7 @@ export async function resolveCompany(apiKey: string) {
     `SELECT
        id,
        name,
+       stripe_subscription_id,
        subscription_status,
        plan,
        trial_ends_at,
