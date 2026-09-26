@@ -197,7 +197,7 @@ app.use('/api', (req, _res, next) => {
 });
  app.use(companiesRouter);
     app.use(requireActiveSubscription, customersRouter);
-    app.use(appointmentsRouter);
+    app.use(requireActiveSubscription, appointmentsRouter);
     app.use(callsRouter);
     app.use(settingsRouter);
     app.use(knowledgeRouter);
