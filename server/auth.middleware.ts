@@ -64,8 +64,11 @@ export async function requireActiveSubscription(
 
     const allowedStatuses = new Set(['trialing', 'active']);
 
-    if (!company.subscription_status ||
-        !allowedStatuses.has(company.subscription_status)) {
+      if (
+  !company.stripe_subscription_id ||
+  !company.subscription_status ||
+  !allowedStatuses.has(company.subscription_status)
+) {
       return res.status(403).json({
         error: 'Subscription required',
         subscriptionStatus: company.subscription_status
