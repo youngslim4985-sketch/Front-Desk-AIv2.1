@@ -196,7 +196,7 @@ app.use('/api', (req, _res, next) => {
   next();
 });
  app.use(companiesRouter);
-    app.use(customersRouter);
+    app.use(requireActiveSubscription, customersRouter);
     app.use(appointmentsRouter);
     app.use(callsRouter);
     app.use(settingsRouter);
