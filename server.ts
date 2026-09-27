@@ -409,7 +409,7 @@ app.put('/api/phone/:companyId', requireActiveSubscription, async (req, res) => 
   }
 });
 
-app.post('/api/phone/provision', async (req, res) => {
+app.post('/api/phone/provision', requireActiveSubscription, async (req, res) => {
   const apiKey = req.header('x-api-key');
   const { companyId, areaCode } = req.body;
 
