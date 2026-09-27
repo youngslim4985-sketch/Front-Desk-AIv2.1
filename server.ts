@@ -338,7 +338,7 @@ app.get(
   }
 });
 
-app.put('/api/phone/:companyId', async (req, res) => {
+app.put('/api/phone/:companyId', requireActiveSubscription, async (req, res) => {
   const apiKey = req.header('x-api-key');
   const { companyId } = req.params;
   const { phoneNumber, voiceId, greetingScript } = req.body;
