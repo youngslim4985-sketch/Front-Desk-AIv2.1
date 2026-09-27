@@ -284,7 +284,7 @@ app.get(
   });
 
   // 3. Phone Configuration & Provisioning
-  app.get('/api/phone', async (req, res) => {
+  app.get('/api/phone', requireActiveSubscription, async (req, res) => {
   const apiKey = req.header('x-api-key');
 
   if (!apiKey) {
