@@ -200,7 +200,7 @@ app.use('/api', (req, _res, next) => {
     app.use(requireActiveSubscription, appointmentsRouter);
     app.use(requireActiveSubscription, callsRouter);
     app.use(requireActiveSubscription, settingsRouter);
-    app.use(knowledgeRouter);
+    app.use(requireActiveSubscription, knowledgeRouter);
     app.use(billingRouter);
  
     // API Health Check
