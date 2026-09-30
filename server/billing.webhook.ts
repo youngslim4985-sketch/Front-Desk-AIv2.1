@@ -123,10 +123,10 @@ router.post(
 if (event.type === 'invoice.payment_failed') {
   const invoice = event.data.object as Stripe.Invoice;
 
-  const customerId =
-    typeof invoice.customer === 'string'
-      ? invoice.customer
-      : invoice.customer?.id;
+const customerId =
+  typeof invoice.customer === 'string'
+    ? invoice.customer
+    : invoice.customer?.id;
 
   if (customerId) {
     const companyResult = await pool.query(
