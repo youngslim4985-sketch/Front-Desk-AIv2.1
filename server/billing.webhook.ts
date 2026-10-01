@@ -6,7 +6,7 @@ const router = express.Router();
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
+const webhookSecretTest = process.env.STRIPE_WEBHOOK_SECRET_TEST;
 if (!stripeSecretKey) {
   throw new Error('STRIPE_SECRET_KEY is not configured');
 }
@@ -33,19 +33,34 @@ router.post(
 
     let event: Stripe.Event;
 
-    try {
-      event = stripe.webhooks.constructEvent(
-        req.body,
-        signature,
-        webhookSecret
-      );
-    } catch (err) {
-      console.error('Stripe webhook signature verification failed:', err);
+ try {
+  event = stripe.webhooks.constructEvent(
+    req.body,
+    signature,
+    webhookSecret
+  );
+} catch (liveErr) {
+  if (!webhookSecretTest) {
+    console.error('Stripe webhook signature verification failed:', liveErr);
+    return res.status(400).json({
+      error: 'Invalid Stripe webhook signature',
+    });
+  }
 
-      return res.status(400).json({
-        error: 'Invalid Stripe webhook signature',
-      });
-    }
+  try {
+ event = stripe.webhooks.constructEvent(
+      req.body,
+      signature,
+      webhookSecretTest
+    );
+  } catch (testErr) {
+    console.error('Stripe webhook signature verification failed:', testErr);
+    return res.status(400).json({
+      error: 'Invalid Stripe webhook signature',
+    });
+  }
+}
+      
 
     try {
       if (
