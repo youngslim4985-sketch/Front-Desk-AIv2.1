@@ -170,7 +170,42 @@ const customerId =
     }
   }
 }
-      return res.status(200).json({ received: true });
+if (event.type === 'invoice.payment_succeeded') {
+  const invoice = event.data.object as Stripe.Invoice;
+
+  const customerId =
+    typeof invoice.customer === 'string'
+      ? invoice.customer
+      : invoice.customer?.id;
+
+  if (customerId) {
+    const companyResult = await pool.query(
+      `
+        select id
+        from frontdeskai.companies
+        where stripe_customer_id = $1
+        limit 1
+      `,
+      [customerId]
+    );
+
+    const company = companyResult.rows[0];
+
+    if (company) {
+      await withTenant(company.id, async (client) => {
+        await client.query(
+          `
+            update frontdeskai.companies
+            set subscription_status = 'active'
+            where id = $1
+          `,
+          [company.id]
+        );
+      });
+    }
+  }
+}   
+   return res.status(200).json({ received: true });
     } catch (err) {
       console.error('Stripe webhook processing failed:', err);
 
