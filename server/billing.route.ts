@@ -145,5 +145,54 @@ router.post('/api/billing/checkout', async (req, res) => {
     });
   }
 });
+router.post('/api/billing/portal', async (req, res) => {
+  const apiKey = req.header('x-api-key');
 
+  if (!apiKey) {
+    return res.status(401).json({
+      error: 'Missing x-api-key header',
+    });
+  }
+
+  try {
+    if (!stripeSecretKey) {
+      return res.status(503).json({
+        error: 'Billing is not configured',
+      });
+    }
+
+    const company = await resolveCompany(apiKey);
+
+    if (!company) {
+      return res.status(401).json({
+        error: 'Invalid API key',
+      });
+    }
+
+    if (!company.stripe_customer_id) {
+      return res.status(400).json({
+        error: 'No Stripe customer exists for this company',
+      });
+    }
+
+    const appUrl =
+      process.env.APP_URL ||
+      'https://front-desk-a-iv2-1.vercel.app';
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: company.stripe_customer_id,
+      return_url: `${appUrl}/?billing=portal-return`,
+    });
+
+    return res.status(200).json({
+      portalUrl: session.url,
+    });
+  } catch (err) {
+    console.error('POST /api/billing/portal failed:', err);
+
+    return res.status(500).json({
+      error: 'Unable to create billing portal session',
+    });
+  }
+});
 export default router;
