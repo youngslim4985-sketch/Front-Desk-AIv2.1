@@ -1,3 +1,6 @@
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
+import { AuthPage } from './components/auth/AuthPage';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Company, PhoneConfig, KnowledgeDocument, CallLog, Customer, Appointment } from './types';
 import { InvestigationModuleId } from './types/postgres';
@@ -39,6 +42,27 @@ import { ExperimentalHarnessModule } from './components/modules/ExperimentalHarn
 import { Bot, Sparkles, ArrowLeft, Terminal } from 'lucide-react';
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession);
+        setAuthLoading(false);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   // Front-Desk-AI State
   const [companies, setCompanies] = useState<Company[]>(INITIAL_COMPANIES);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>(INITIAL_COMPANIES[0].id);
@@ -152,6 +176,18 @@ export default function App() {
   const handleToggleDevMode = (enabled: boolean) => {
     setIsDevMode(enabled);
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+        Loading...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthPage />;
+  }
 
   // DEVELOPER MODE (PostgreSQL SubXacts & Engine Lab) - Accessible only when isDevMode is explicitly active
   if (isDevMode) {
