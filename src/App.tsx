@@ -46,10 +46,17 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setAuthLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        setSession(data.session);
+      })
+      .catch((error) => {
+        console.error('Supabase session initialization failed:', error);
+        setSession(null);
+      })
+      .finally(() => {
+        setAuthLoading(false);
+      });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
