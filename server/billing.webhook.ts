@@ -7,16 +7,26 @@ const router = express.Router();
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const webhookSecretTest = process.env.STRIPE_WEBHOOK_SECRET_TEST;
-if (!stripeSecretKey) {
-  throw new Error('STRIPE_SECRET_KEY is not configured');
-}
+const stripe = stripeSecretKey
+  ? new Stripe(stripeSecretKey)
+  : null;
 
-const stripe = new Stripe(stripeSecretKey);
+if (!stripeSecretKey) {
+  console.warn(
+    'Stripe is not configured; billing webhooks will return 503'
+  );
+}
 
 router.post(
   '/api/billing/webhook',
   express.raw({ type: 'application/json' }),
   async (req, res) => {
+    if (!stripeSecretKey || !stripe) {
+      return res.status(503).json({
+        error: 'Stripe billing is not configured',
+      });
+    }
+
     if (!webhookSecret) {
       return res.status(503).json({
         error: 'Stripe webhook secret is not configured',
@@ -77,10 +87,7 @@ router.post(
 
         const companyResult = await pool.query(
           `
-          select id
-          from frontdeskai.companies
-          where stripe_customer_id = $1
-          limit 1
+          select id from frontdeskai.lookup_company_by_stripe_customer($1)
           `,
           [customerId]
         );
@@ -146,10 +153,7 @@ const customerId =
   if (customerId) {
     const companyResult = await pool.query(
       `
-      select id
-      from frontdeskai.companies
-      where stripe_customer_id = $1
-      limit 1
+      select id from frontdeskai.lookup_company_by_stripe_customer($1)
       `,
       [customerId]
     );
@@ -181,10 +185,7 @@ if (event.type === 'invoice.payment_succeeded') {
   if (customerId) {
     const companyResult = await pool.query(
       `
-        select id
-        from frontdeskai.companies
-        where stripe_customer_id = $1
-        limit 1
+        select id from frontdeskai.lookup_company_by_stripe_customer($1)
       `,
       [customerId]
     );

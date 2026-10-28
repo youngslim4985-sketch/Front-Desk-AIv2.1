@@ -68,3 +68,10 @@ htmlcov/
 # Build artifacts
 dist/
 build/
+.vercel
+.env*
+.env.preview
+check-rls.cjs
+
+# Public Supabase CA required for verified database TLS
+!prod-ca-2021.crt
